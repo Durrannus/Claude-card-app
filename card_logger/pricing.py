@@ -214,6 +214,47 @@ def parse_riftbound(data: list[tuple[dict, list[dict], list[dict]]], card: Card)
     )
 
 
+def riftbound_market_prices(fetch=None, report=None) -> dict[str, tuple[str, float]]:
+    """Today's price for every Riftbound card, keyed by db.name_key(name).
+
+    Uses each card's cheapest regular (non-showcase) printing across all
+    sets, which is the price a player pays to put the card in a deck.
+    """
+    fetch = fetch or _cached_get_json
+    groups = fetch(f"{TCGCSV}/groups").get("results", [])
+    if not groups:
+        raise PriceLookupError("Couldn't load the Riftbound set list.")
+    data = []
+    for i, g in enumerate(groups, 1):
+        if report:
+            report(f"Downloading Riftbound prices… set {i}/{len(groups)}: {g.get('name')}")
+        gid = g["groupId"]
+        data.append((fetch(f"{TCGCSV}/{gid}/products").get("results", []),
+                     fetch(f"{TCGCSV}/{gid}/prices").get("results", [])))
+    return parse_riftbound_market(data)
+
+
+def parse_riftbound_market(data: list[tuple[list[dict], list[dict]]]) -> dict[str, tuple[str, float]]:
+    """`data` holds (products, prices) for each set."""
+    best: dict[str, tuple[str, float]] = {}
+    for products, prices in data:
+        by_product: dict[int, list[dict]] = {}
+        for price in prices:
+            by_product.setdefault(price.get("productId"), []).append(price)
+        for product in products:
+            extended = {e.get("name") for e in product.get("extendedData") or []}
+            name = product.get("name") or product.get("cleanName", "")
+            if "Number" not in extended or "(" in name or any(w in name.lower() for w in VARIANT_WORDS):
+                continue  # sealed product or a showcase/alt-art printing
+            picked = _pick_tcgplayer_price(by_product.get(product.get("productId"), []), want_foil=False)
+            if picked is None:
+                continue
+            key = _norm(name)
+            if key not in best or picked[0] < best[key][1]:
+                best[key] = (name, picked[0])
+    return best
+
+
 def _pick_tcgplayer_price(prices: list[dict], want_foil: bool) -> tuple[float, str] | None:
     order = ["Foil", "Normal"] if want_foil else ["Normal", "Foil"]
     ranked = sorted(prices, key=lambda p: order.index(p["subTypeName"]) if p.get("subTypeName") in order else 9)

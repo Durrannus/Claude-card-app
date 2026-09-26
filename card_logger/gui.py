@@ -130,6 +130,7 @@ class CardDialog(tk.Toplevel):
             "condition": tk.StringVar(value=self._card.condition),
             "quantity": tk.StringVar(value=str(self._card.quantity)),
             "value": tk.StringVar(value=f"{self._card.value:.2f}"),
+            "paid": tk.StringVar(value=f"{self._card.purchase_price:.2f}" if self._card.purchase_price else ""),
         }
         self.wishlist_var = tk.BooleanVar(value=self._card.wishlist)
         self.photo_var = tk.StringVar(value=Path(self._card.image_path).name if self._card.image_path else "(none)")
@@ -154,6 +155,7 @@ class CardDialog(tk.Toplevel):
             ("Condition", ttk.Combobox(form, textvariable=self.vars["condition"], values=CONDITIONS, width=38)),
             ("Quantity", ttk.Spinbox(form, textvariable=self.vars["quantity"], from_=0, to=9999, width=38)),
             ("Value (each)", value_row),
+            ("Paid (each)", ttk.Entry(form, textvariable=self.vars["paid"], width=40)),
             ("Photo", photo_row),
             ("", ttk.Checkbutton(form, text="On my wishlist (I don't own it yet)", variable=self.wishlist_var)),
         ]
@@ -232,13 +234,15 @@ class CardDialog(tk.Toplevel):
         try:
             quantity = int(self.vars["quantity"].get() or 0)
             value = float(self.vars["value"].get().replace("$", "").replace(",", "") or 0)
+            paid = float(self.vars["paid"].get().replace("$", "").replace(",", "") or 0)
         except ValueError:
             messagebox.showerror(
-                "Invalid number", "Quantity must be a whole number and value a number.", parent=self
+                "Invalid number", "Quantity must be a whole number, and value and paid must be numbers.",
+                parent=self,
             )
             return
-        if quantity < 0 or value < 0:
-            messagebox.showerror("Invalid number", "Quantity and value cannot be negative.", parent=self)
+        if quantity < 0 or value < 0 or paid < 0:
+            messagebox.showerror("Invalid number", "Quantity, value and paid cannot be negative.", parent=self)
             return
 
         self.result = replace(
@@ -251,6 +255,7 @@ class CardDialog(tk.Toplevel):
             condition=self.vars["condition"].get().strip(),
             quantity=quantity,
             value=value,
+            purchase_price=paid,
             notes=self.notes.get("1.0", "end").strip(),
             wishlist=self.wishlist_var.get(),
         )
@@ -668,7 +673,8 @@ def _sort_key(value):
 
 
 def build_window(root: tk.Tk, db: CardDatabase):
-    """Lay out the main window; returns the (collection, meta tracker) tabs."""
+    """Lay out the main window; returns the notebook and its three tabs."""
+    from .market_gui import MarketTab
     from .meta_gui import MetaTrackerTab
 
     root.title("Card Collection Logger")
@@ -679,16 +685,18 @@ def build_window(root: tk.Tk, db: CardDatabase):
     root.minsize(min(1000, width), min(600, height))
     theme.apply_theme(root)
 
-    theme.header(root, "Riftbound collection, wishlist and meta tracker").pack(fill="x")
+    theme.header(root, "Riftbound collection and market tracker: spot the right time to buy and sell").pack(fill="x")
     tabs = ttk.Notebook(root)
     tabs.pack(fill="both", expand=True, pady=(8, 12))
     collection = CardLoggerApp(tabs, db)
     meta = MetaTrackerTab(tabs, db, on_collection_changed=collection.refresh)
+    market_tab = MarketTab(tabs, db, on_data_changed=lambda: (collection.refresh(), meta.refresh()))
     tabs.add(collection, text="  Collection  ")
     tabs.add(meta, text="  Meta tracker  ")
-    # Counts in each tab depend on the other, so refresh on switching.
-    tabs.bind("<<NotebookTabChanged>>", lambda _: (collection.refresh(), meta.refresh()))
-    return tabs, collection, meta
+    tabs.add(market_tab, text="  Market  ")
+    # Each tab shows data the others change, so refresh the one being opened.
+    tabs.bind("<<NotebookTabChanged>>", lambda _: tabs.nametowidget(tabs.select()).refresh())
+    return tabs, collection, meta, market_tab
 
 
 def main(db_path=None) -> None:

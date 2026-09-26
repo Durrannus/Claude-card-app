@@ -1,13 +1,19 @@
 # Card Collection Logger
 
-A small desktop program for keeping track of your trading card collection,
-built mainly for **Riftbound** (the League of Legends TCG) but works for any
-card game. It runs on your own computer and has no extra packages to
-install. Only price lookups need the internet.
+A desktop tool for buying and selling **Riftbound** cards (the League of
+Legends TCG). It tracks your collection, what you paid, how prices move and
+which cards the competitive meta is starting to play. From that it tells you
+when a card looks like a good sell or an early buy. It works for other card
+games too, apart from the meta tracking.
+
+It runs on your own computer and has no extra packages to install. Only price
+lookups need the internet.
 
 ![Collection tab](docs/screenshot-collection.png)
 
 ![Meta tracker tab](docs/screenshot-meta.png)
+
+![Market tab](docs/screenshot-market.png)
 
 ## What it does
 
@@ -22,6 +28,8 @@ install. Only price lookups need the internet.
   to complete it; tick "Mark as owned" when you get one
 - **Price lookup:** fetch current market prices for Riftbound, Magic,
   Pokémon and Yu-Gi-Oh! cards (see below)
+- **Market signals:** sell, hold and buy suggestions from each card's price
+  history and meta trend, with charts and your profit (see below)
 - **Meta tracker:** save tournament decklists and see which cards and
   legends are played most, how many copies decks run, and which of those
   cards you're missing (see below)
@@ -149,6 +157,49 @@ you.
   `rarity`, `condition`, `quantity`, `value`, `notes`, `date_added`,
   `wishlist` (`yes` for wishlist cards), `image_path`. The
   easiest way to get the format right is to export first and copy it.
+
+## Market tab: when to sell or buy
+
+The Market tab brings everything together. For every card you own (and
+every meta card you don't), it shows:
+
+- **Profit:** current value minus what you paid. Enter "Paid (each)" in the
+  Add/Edit card form.
+- **Price move:** how much the price has changed over the period you pick.
+- **Play rate:** the share of recent decklists that play the card.
+- **Meta move:** how the play rate changed in the chosen period (last 7, 14
+  or 30 days of decklists) compared with the period before it, in
+  percentage points. A "?" means the change could just be chance, because
+  there weren't enough decklists to be sure.
+- **Signal:** a suggestion with a plain explanation. Select a card to see
+  the explanation next to charts of its price and weekly play rate.
+
+| Signal | When | Why |
+| --- | --- | --- |
+| SELL – hype peak | You own it, play rate is rising **and** price is up 25%+ | Sell spare copies while demand is hot |
+| SELL – leaving meta | You own it, play rate is falling 10+ points | Prices usually follow play rate down |
+| SELL – price spike | You own it, price is up 25%+ without more play | Spikes without demand often fall back |
+| HOLD – rising | You own it, play rate is rising 10+ points, price hasn't spiked | The price may not have caught up yet |
+| BUY – early | You don't own it, play rate is rising, price is up less than 10% | Buy before the price reacts |
+| WATCH – moving | You don't own it, play rate is rising, price already moving | May already be priced in |
+| HOLD | Nothing unusual | |
+
+A play-rate change only counts as rising or falling when there are at least
+5 decklists in each period and the change is big enough not to be chance
+(a z-score of 1.65 or more). These are rules of thumb from your own data, not
+guarantees, so check recent sold listings before you buy or sell.
+
+### Keeping the data fresh
+
+Signals are only as good as the data behind them:
+
+- **Prices:** click **Update all prices** (or leave "Update daily when the
+  app opens" ticked). It refreshes your collection and wishlist values and
+  saves today's price for every Riftbound card, so cards you don't own get a
+  price history too. Price charts fill in as the days go by.
+- **Decklists:** add tournament results regularly in the Meta tracker tab,
+  with their dates. Trends compare recent decklists with older ones, so a
+  steady flow of dated lists is what makes early detection work.
 
 ## Where your data is stored
 

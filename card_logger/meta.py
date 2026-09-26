@@ -19,7 +19,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import date
 
-from .db import CardDatabase
+from .db import CardDatabase, name_key
 
 LEGEND, CHAMPION, MAIN, RUNES, BATTLEFIELDS, SIDEBOARD = (
     "Legend", "Champion", "Main deck", "Runes", "Battlefields", "Sideboard",
@@ -53,10 +53,7 @@ def typical_copies(avg: float) -> int:
     return max(1, int(avg + 0.5))
 
 
-def card_key(name: str) -> str:
-    """Key for treating spellings like 'Kennen - Heart of the Tempest' and
-    'Kennen, Heart of the Tempest' as the same card."""
-    return re.sub(r"[^a-z0-9]", "", name.lower())
+card_key = name_key
 
 
 @dataclass

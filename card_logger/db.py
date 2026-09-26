@@ -2,6 +2,7 @@
 
 import csv
 import os
+import re
 import shutil
 import sqlite3
 from dataclasses import asdict, dataclass, fields
@@ -39,10 +40,17 @@ class Card:
     date_added: str = ""
     wishlist: bool = False
     image_path: str = ""
+    purchase_price: float = 0.0  # what you paid for each copy
     id: int | None = None
 
 
 CARD_FIELDS = [f.name for f in fields(Card) if f.name != "id"]
+
+
+def name_key(name: str) -> str:
+    """Key for treating spellings like 'Kennen - Heart of the Tempest' and
+    'Kennen, Heart of the Tempest' as the same card."""
+    return re.sub(r"[^a-z0-9]", "", name.lower())
 
 
 def _row_to_card(row: sqlite3.Row) -> Card:
@@ -58,6 +66,7 @@ def _parse_bool(text: str) -> bool:
 _ADDED_COLUMNS = {
     "wishlist": "INTEGER NOT NULL DEFAULT 0",
     "image_path": "TEXT NOT NULL DEFAULT ''",
+    "purchase_price": "REAL NOT NULL DEFAULT 0",
 }
 
 
@@ -92,6 +101,23 @@ class CardDatabase:
         for column, definition in _ADDED_COLUMNS.items():
             if column not in existing:
                 self.conn.execute(f"ALTER TABLE cards ADD COLUMN {column} {definition}")
+        self.conn.executescript(
+            """
+            -- One price per day, either for a card in the collection (card_id)
+            -- or for a card name in general (card_id NULL, e.g. meta cards).
+            CREATE TABLE IF NOT EXISTS price_history (
+                card_id INTEGER,
+                name_key TEXT NOT NULL,
+                name TEXT NOT NULL,
+                game TEXT NOT NULL DEFAULT '',
+                day TEXT NOT NULL,
+                price REAL NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS price_history_card ON price_history(card_id, day);
+            CREATE INDEX IF NOT EXISTS price_history_name ON price_history(name_key, day);
+            CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+            """
+        )
         self.conn.commit()
 
     def close(self) -> None:
@@ -107,8 +133,9 @@ class CardDatabase:
             f"VALUES ({', '.join('?' for _ in CARD_FIELDS)})",
             values,
         )
-        self.conn.commit()
         card.id = cur.lastrowid
+        self._record_card_price(card)
+        self.conn.commit()
         return card.id
 
     def update(self, card: Card) -> None:
@@ -118,11 +145,64 @@ class CardDatabase:
         assignments = ", ".join(f"{f} = ?" for f in CARD_FIELDS)
         values = [getattr(card, f) for f in CARD_FIELDS] + [card.id]
         self.conn.execute(f"UPDATE cards SET {assignments} WHERE id = ?", values)
+        self._record_card_price(card)
+        self.conn.commit()
+
+    # --- price history -------------------------------------------------------
+
+    def _record_card_price(self, card: Card) -> None:
+        if card.value > 0:
+            self.record_price(card.name, card.value, game=card.game, card_id=card.id, commit=False)
+
+    def record_price(self, name: str, price: float, game: str = "", card_id: int | None = None,
+                     day: str | None = None, commit: bool = True) -> None:
+        """Save today's (or `day`'s) price, replacing any earlier one that day."""
+        day = day or date.today().isoformat()
+        key = name_key(name)
+        if card_id is None:
+            self.conn.execute("DELETE FROM price_history WHERE card_id IS NULL AND name_key = ? AND day = ?",
+                              (key, day))
+        else:
+            self.conn.execute("DELETE FROM price_history WHERE card_id = ? AND day = ?", (card_id, day))
+        self.conn.execute(
+            "INSERT INTO price_history (card_id, name_key, name, game, day, price) VALUES (?, ?, ?, ?, ?, ?)",
+            (card_id, key, name, game, day, price),
+        )
+        if commit:
+            self.conn.commit()
+
+    def price_history(self, card_id: int | None = None, name: str = "") -> list[tuple[str, float]]:
+        """(day, price) pairs, oldest first: a collection card's own history
+        when `card_id` is given, otherwise the general history for `name`."""
+        if card_id is not None:
+            rows = self.conn.execute(
+                "SELECT day, price FROM price_history WHERE card_id = ? ORDER BY day", (card_id,)
+            )
+        else:
+            rows = self.conn.execute(
+                "SELECT day, price FROM price_history WHERE card_id IS NULL AND name_key = ? ORDER BY day",
+                (name_key(name),),
+            )
+        return [(r["day"], r["price"]) for r in rows]
+
+    def last_price_update(self) -> str:
+        row = self.conn.execute("SELECT MAX(day) AS day FROM price_history").fetchone()
+        return row["day"] or ""
+
+    # --- settings ------------------------------------------------------------
+
+    def get_setting(self, key: str, default: str = "") -> str:
+        row = self.conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+        return row["value"] if row else default
+
+    def set_setting(self, key: str, value: str) -> None:
+        self.conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value))
         self.conn.commit()
 
     def delete(self, card_id: int) -> None:
         card = self.get(card_id)
         self.conn.execute("DELETE FROM cards WHERE id = ?", (card_id,))
+        self.conn.execute("DELETE FROM price_history WHERE card_id = ?", (card_id,))
         self.conn.commit()
         if card:
             self._remove_stored_image(card.image_path)
@@ -234,6 +314,7 @@ class CardDatabase:
                 try:
                     data["quantity"] = int(data.get("quantity") or 1)
                     data["value"] = float(data.get("value") or 0)
+                    data["purchase_price"] = float(data.get("purchase_price") or 0)
                     data["wishlist"] = _parse_bool(data.get("wishlist", ""))
                     self.add(Card(**data))
                 except ValueError as e:
@@ -250,3 +331,5 @@ def _validate(card: Card) -> None:
         raise ValueError("Quantity cannot be negative")
     if card.value < 0:
         raise ValueError("Value cannot be negative")
+    if card.purchase_price < 0:
+        raise ValueError("Purchase price cannot be negative")
