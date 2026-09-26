@@ -21,6 +21,9 @@ except ImportError:
 
 ALL_GAMES = "All games"
 COLLECTION, WISHLIST = "collection", "wishlist"
+DEFAULT_GAME = "Riftbound"
+KNOWN_GAMES = ["Riftbound", "Magic", "Pokémon", "Yu-Gi-Oh!"]
+RARITIES = ["Common", "Uncommon", "Rare", "Epic", "Showcase", "Promo"]
 IMAGE_FILETYPES = [("Images", " ".join(f"*{ext}" for ext in IMAGE_TYPES)), ("All files", "*.*")]
 PREVIEW_SIZE = (260, 360)
 
@@ -141,10 +144,10 @@ class CardDialog(tk.Toplevel):
         rows = [
             ("Name *", ttk.Entry(form, textvariable=self.vars["name"], width=40)),
             ("Game", ttk.Combobox(form, textvariable=self.vars["game"], width=38,
-                                  values=sorted(set(games) | {"Magic", "Pokémon", "Yu-Gi-Oh!"}))),
+                                  values=_game_choices(games))),
             ("Set", ttk.Entry(form, textvariable=self.vars["set_name"], width=40)),
             ("Card number", ttk.Entry(form, textvariable=self.vars["number"], width=40)),
-            ("Rarity", ttk.Entry(form, textvariable=self.vars["rarity"], width=40)),
+            ("Rarity", ttk.Combobox(form, textvariable=self.vars["rarity"], values=RARITIES, width=38)),
             ("Condition", ttk.Combobox(form, textvariable=self.vars["condition"], values=CONDITIONS, width=38)),
             ("Quantity", ttk.Spinbox(form, textvariable=self.vars["quantity"], from_=0, to=9999, width=38)),
             ("Value (each)", value_row),
@@ -200,7 +203,7 @@ class CardDialog(tk.Toplevel):
             self.lookup_status.set("Enter the card's name first.")
             return
         if not pricing.supported(card):
-            self.lookup_status.set("Set Game to Magic, Pokémon or Yu-Gi-Oh! to look up prices.")
+            self.lookup_status.set("Set Game to Riftbound, Magic, Pokémon or Yu-Gi-Oh! to look up prices.")
             return
         self.lookup_button.state(["disabled"])
         self.lookup_status.set("Looking up price…")
@@ -251,15 +254,11 @@ class CardDialog(tk.Toplevel):
 
 
 class CardLoggerApp(ttk.Frame):
-    def __init__(self, root: tk.Tk, db: CardDatabase):
-        super().__init__(root, padding=8)
-        self.root = root
+    def __init__(self, parent: tk.Misc, db: CardDatabase):
+        super().__init__(parent, padding=8)
+        root = self.root = parent.winfo_toplevel()
         self.db = db
         self.busy = False
-        root.title("Card Collection Logger")
-        root.geometry("1200x650")
-        root.minsize(850, 450)
-        self.pack(fill="both", expand=True)
 
         self._build_toolbar()
         self._build_body()
@@ -455,7 +454,7 @@ class CardLoggerApp(ttk.Frame):
             messagebox.showerror("Photo not saved", f"The card was saved, but its photo wasn't:\n{e}")
 
     def add_card(self) -> None:
-        dialog = CardDialog(self.root, "Add card", self.db.games(), Card(name="", wishlist=self.showing_wishlist))
+        dialog = CardDialog(self.root, "Add card", self.db.games(), Card(name="", game=DEFAULT_GAME, wishlist=self.showing_wishlist))
         if dialog.result:
             self.db.add(dialog.result)
             self._save_photo(dialog.result, dialog.photo)
@@ -534,7 +533,7 @@ class CardLoggerApp(ttk.Frame):
         if not lookups:
             messagebox.showinfo(
                 "Update prices",
-                "Price lookup works for cards whose Game is Magic, Pokémon or Yu-Gi-Oh!.",
+                "Price lookup works for cards whose Game is Riftbound, Magic, Pokémon or Yu-Gi-Oh!.",
             )
             return
 
@@ -598,14 +597,32 @@ class CardLoggerApp(ttk.Frame):
         self.refresh()
 
 
+def _game_choices(games: list[str]) -> list[str]:
+    known = {g.lower() for g in KNOWN_GAMES}
+    return KNOWN_GAMES + sorted((g for g in set(games) if g.lower() not in known), key=str.lower)
+
+
 def _sort_key(value):
     return value.lower() if isinstance(value, str) else value
 
 
 def main(db_path=None) -> None:
+    from .meta_gui import MetaTrackerTab
+
     db = CardDatabase(db_path) if db_path else CardDatabase()
     root = tk.Tk()
-    CardLoggerApp(root, db)
+    root.title("Card Collection Logger")
+    root.geometry("1250x700")
+    root.minsize(900, 480)
+
+    tabs = ttk.Notebook(root)
+    tabs.pack(fill="both", expand=True)
+    collection = CardLoggerApp(tabs, db)
+    meta = MetaTrackerTab(tabs, db, on_collection_changed=collection.refresh)
+    tabs.add(collection, text="  Collection  ")
+    tabs.add(meta, text="  Meta tracker  ")
+    # Counts in each tab depend on the other, so refresh on switching.
+    tabs.bind("<<NotebookTabChanged>>", lambda _: (collection.refresh(), meta.refresh()))
     try:
         root.mainloop()
     finally:

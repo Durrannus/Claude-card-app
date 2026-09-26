@@ -2,6 +2,7 @@
 
 Supported games (matched on the card's "game" field, ignoring case):
 
+- Riftbound            -> TCGplayer prices via TCGCSV (https://tcgcsv.com)
 - Magic: The Gathering -> Scryfall (https://scryfall.com/docs/api)
 - Pokémon              -> Pokémon TCG API (https://pokemontcg.io)
 - Yu-Gi-Oh!            -> YGOPRODeck (https://ygoprodeck.com/api-guide/)
@@ -11,6 +12,8 @@ Prices are in US dollars, based on TCGplayer market data.
 
 import json
 import re
+import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -19,7 +22,11 @@ from dataclasses import dataclass
 from .db import Card
 
 USER_AGENT = "CardCollectionLogger/1.0"
-TIMEOUT = 15
+TIMEOUT = 30
+CACHE_SECONDS = 60 * 60  # prices update daily, so an hour-old answer is fine
+
+RIFTBOUND_CATEGORY = 89  # TCGplayer's category id for Riftbound
+TCGCSV = f"https://tcgcsv.com/tcgplayer/{RIFTBOUND_CATEGORY}"
 
 
 class PriceLookupError(Exception):
@@ -41,6 +48,8 @@ def detect_source(game: str) -> str | None:
     g = _norm(game)
     if not g:
         return None
+    if "riftbound" in g or "leagueoflegends" in g:
+        return "riftbound"
     if g in ("mtg", "magic") or "magicthegathering" in g:
         return "scryfall"
     if "pokemon" in g or "pokmon" in g:
@@ -73,7 +82,24 @@ def _get_json(url: str) -> dict:
         raise PriceLookupError("Price service sent an unexpected response.") from e
 
 
-def lookup_price(card: Card, fetch=_get_json) -> PriceResult:
+_cache: dict[str, tuple[float, dict]] = {}
+_cache_lock = threading.Lock()
+
+
+def _cached_get_json(url: str) -> dict:
+    """_get_json, remembering answers for CACHE_SECONDS so that pricing many
+    cards from the same set only downloads that set once."""
+    with _cache_lock:
+        hit = _cache.get(url)
+        if hit and time.monotonic() - hit[0] < CACHE_SECONDS:
+            return hit[1]
+    data = _get_json(url)
+    with _cache_lock:
+        _cache[url] = (time.monotonic(), data)
+    return data
+
+
+def lookup_price(card: Card, fetch=_cached_get_json) -> PriceResult:
     """Return the current market price for `card`.
 
     Raises PriceLookupError if the game isn't supported, the card can't be
@@ -83,15 +109,119 @@ def lookup_price(card: Card, fetch=_get_json) -> PriceResult:
     if source is None:
         raise PriceLookupError(
             f"Price lookup isn't available for game '{card.game or '(none)'}'. "
-            "Supported: Magic, Pokémon, Yu-Gi-Oh!"
+            "Supported: Riftbound, Magic, Pokémon, Yu-Gi-Oh!"
         )
     if not card.name.strip():
         raise PriceLookupError("Card has no name.")
-    handler = {"scryfall": _scryfall, "pokemon": _pokemon, "yugioh": _yugioh}[source]
+    handler = {"riftbound": _riftbound, "scryfall": _scryfall, "pokemon": _pokemon, "yugioh": _yugioh}[source]
     result = handler(card, fetch)
     if result is None:
         raise PriceLookupError(f"No price found for '{card.name}'.")
     return result
+
+
+# --- Riftbound: TCGplayer data via TCGCSV ---------------------------------
+
+VARIANT_WORDS = ("showcase", "alternate", "alt art", "overnumbered", "signature", "promo", "prerelease")
+
+
+def _card_number(text: str) -> int | None:
+    """'OGN-001/298', '001/298', '1' and 'OGN 001' all give 1."""
+    digits = re.findall(r"\d+", text.split("/")[0])
+    return int(digits[-1]) if digits else None
+
+
+def _set_code(text: str) -> str:
+    """'OGN-001' gives 'ogn'."""
+    m = re.match(r"\s*([A-Za-z]{2,5})[\s-]*\d", text)
+    return m.group(1).lower() if m else ""
+
+
+def _riftbound(card: Card, fetch) -> PriceResult | None:
+    groups = fetch(f"{TCGCSV}/groups").get("results", [])
+    if not groups:
+        raise PriceLookupError("Couldn't load the Riftbound set list.")
+    want_set = _norm(card.set_name)
+    want_code = _set_code(card.number)
+
+    def matches(g: dict) -> bool:
+        name, abbr = _norm(g.get("name", "")), _norm(g.get("abbreviation") or "")
+        if want_code and abbr == want_code:
+            return True
+        return bool(want_set) and (want_set in (name, abbr) or (len(want_set) > 3 and want_set in name))
+
+    # Look in the card's own set first; if it isn't found there (or no set
+    # was given), look through every set, newest first.
+    chosen = [g for g in groups if matches(g)]
+    newest_first = sorted(groups, key=lambda g: g.get("publishedOn") or "", reverse=True)
+    for batch in ([chosen] if chosen else []) + [[g for g in newest_first if g not in chosen]]:
+        data = []
+        for g in batch:
+            gid = g["groupId"]
+            data.append((
+                g,
+                fetch(f"{TCGCSV}/{gid}/products").get("results", []),
+                fetch(f"{TCGCSV}/{gid}/prices").get("results", []),
+            ))
+        result = parse_riftbound(data, card)
+        if result:
+            return result
+    return None
+
+
+def parse_riftbound(data: list[tuple[dict, list[dict], list[dict]]], card: Card) -> PriceResult | None:
+    """`data` holds (group, products, prices) for each set to search."""
+    wanted = _norm(card.name)
+    want_num = _card_number(card.number) if card.number else None
+    hints = f"{card.rarity} {card.notes}".lower()
+    want_variant = any(w in hints for w in VARIANT_WORDS)
+    want_foil = "foil" in hints
+
+    candidates = []
+    for group, products, prices in data:
+        by_product: dict[int, list[dict]] = {}
+        for price in prices:
+            by_product.setdefault(price.get("productId"), []).append(price)
+        for product in products:
+            extended = {e.get("name"): e.get("value") for e in product.get("extendedData") or []}
+            if "Number" not in extended:
+                continue  # booster boxes and other sealed products
+            # "name" keeps the "(Alternate Art)"-style suffix in brackets.
+            name = product.get("name") or product.get("cleanName", "")
+            base = _norm(re.sub(r"\(.*?\)", "", name))
+            full = _norm(name)
+            if wanted not in (base, full) and not full.startswith(wanted):
+                continue
+            price = _pick_tcgplayer_price(by_product.get(product.get("productId"), []), want_foil)
+            if price is None:
+                continue
+            is_variant = full != base or any(w in name.lower() for w in VARIANT_WORDS)
+            score = 0
+            if wanted in (base, full):
+                score += 3
+            if want_num is not None and _card_number(extended["Number"]) == want_num:
+                score += 4
+            if is_variant == want_variant:
+                score += 4
+            candidates.append((score, price, product, group, extended["Number"]))
+    if not candidates:
+        return None
+    score, (value, subtype), product, group, number = max(candidates, key=lambda c: c[0])
+    return PriceResult(
+        price=value,
+        source="TCGplayer (via TCGCSV)",
+        matched=f"{product.get('name')} — {group.get('name')} #{number} ({subtype})",
+    )
+
+
+def _pick_tcgplayer_price(prices: list[dict], want_foil: bool) -> tuple[float, str] | None:
+    order = ["Foil", "Normal"] if want_foil else ["Normal", "Foil"]
+    ranked = sorted(prices, key=lambda p: order.index(p["subTypeName"]) if p.get("subTypeName") in order else 9)
+    for p in ranked:
+        value = p.get("marketPrice") or p.get("midPrice") or p.get("lowPrice")
+        if value:
+            return float(value), p.get("subTypeName") or "Normal"
+    return None
 
 
 # --- Magic: Scryfall -------------------------------------------------------

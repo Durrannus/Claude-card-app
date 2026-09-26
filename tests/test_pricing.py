@@ -6,6 +6,7 @@ from card_logger.pricing import (
     detect_source,
     lookup_price,
     parse_pokemon,
+    parse_riftbound,
     parse_scryfall,
     parse_yugioh,
 )
@@ -40,9 +41,104 @@ YUGIOH_CARDS = [
 ]
 
 
+RB_GROUPS = [
+    {"groupId": 24344, "name": "Origins", "abbreviation": "OGN", "publishedOn": "2025-10-31T00:00:00"},
+    {"groupId": 24500, "name": "Spiritforged", "abbreviation": "SFD", "publishedOn": "2026-02-13T00:00:00"},
+]
+
+
+def rb_product(pid, name, number, rarity="Rare"):
+    return {"productId": pid, "name": name, "cleanName": name.replace(",", "").replace("(", "").replace(")", ""),
+            "extendedData": [{"name": "Rarity", "value": rarity}, {"name": "Number", "value": number}]}
+
+
+RB_PRODUCTS = {
+    24344: [
+        rb_product(1, "Kennen, Storm of Shuriken", "OGN-148/298"),
+        rb_product(2, "Kennen, Storm of Shuriken (Alternate Art)", "OGN-148a/298", "Showcase"),
+        rb_product(3, "Gust Monk", "OGN-051/298", "Common"),
+        {"productId": 4, "name": "Origins Booster Box", "cleanName": "Origins Booster Box", "extendedData": []},
+    ],
+    24500: [rb_product(10, "Gust Monk", "SFD-020/221", "Common")],
+}
+RB_PRICES = {
+    24344: [
+        {"productId": 1, "subTypeName": "Normal", "marketPrice": 4.25, "midPrice": 5.0},
+        {"productId": 2, "subTypeName": "Foil", "marketPrice": 61.0},
+        {"productId": 3, "subTypeName": "Normal", "marketPrice": 0.12},
+        {"productId": 3, "subTypeName": "Foil", "marketPrice": 0.95},
+        {"productId": 4, "subTypeName": "Normal", "marketPrice": 120.0},
+    ],
+    24500: [{"productId": 10, "subTypeName": "Normal", "marketPrice": 0.30}],
+}
+
+
+def rb_fetch(urls=None):
+    def fetch(url):
+        if urls is not None:
+            urls.append(url)
+        if url.endswith("/groups"):
+            return {"results": RB_GROUPS}
+        gid = int(url.rstrip("/").split("/")[-2])
+        return {"results": (RB_PRODUCTS if url.endswith("/products") else RB_PRICES).get(gid, [])}
+    return fetch
+
+
+class RiftboundTest(unittest.TestCase):
+    def data(self):
+        return [(g, RB_PRODUCTS[g["groupId"]], RB_PRICES[g["groupId"]]) for g in RB_GROUPS]
+
+    def test_prefers_regular_printing(self):
+        r = parse_riftbound(self.data(), Card(name="Kennen, Storm of Shuriken"))
+        self.assertEqual(r.price, 4.25)
+
+    def test_showcase_hint(self):
+        r = parse_riftbound(self.data(), Card(name="Kennen, Storm of Shuriken", rarity="Showcase"))
+        self.assertEqual(r.price, 61.0)
+        self.assertIn("Alternate Art", r.matched)
+
+    def test_dash_spelling_and_number(self):
+        r = parse_riftbound(self.data(), Card(name="Gust Monk", number="SFD-020"))
+        self.assertEqual(r.price, 0.30)
+        r = parse_riftbound(self.data(), Card(name="Kennen - Storm of Shuriken", number="148"))
+        self.assertEqual(r.price, 4.25)
+
+    def test_foil_hint(self):
+        r = parse_riftbound(self.data(), Card(name="Gust Monk", number="OGN-051", notes="foil"))
+        self.assertEqual(r.price, 0.95)
+
+    def test_sealed_products_ignored(self):
+        self.assertIsNone(parse_riftbound(self.data(), Card(name="Origins Booster Box")))
+
+    def test_lookup_searches_named_set_only(self):
+        urls = []
+        r = lookup_price(Card(name="Gust Monk", game="Riftbound", set_name="Origins"), fetch=rb_fetch(urls))
+        self.assertEqual(r.price, 0.12)
+        self.assertTrue(all("/24500/" not in u for u in urls))
+        self.assertTrue(urls[0].startswith("https://tcgcsv.com/tcgplayer/89/"))
+
+    def test_lookup_uses_set_code_from_number(self):
+        r = lookup_price(Card(name="Gust Monk", game="Riftbound", number="SFD-020"), fetch=rb_fetch())
+        self.assertEqual(r.price, 0.30)
+
+    def test_lookup_without_set_checks_all_sets(self):
+        r = lookup_price(Card(name="Kennen, Storm of Shuriken", game="Riftbound"), fetch=rb_fetch())
+        self.assertEqual(r.price, 4.25)
+
+    def test_lookup_wrong_set_falls_back_to_others(self):
+        r = lookup_price(Card(name="Kennen, Storm of Shuriken", game="Riftbound", set_name="Spiritforged"),
+                         fetch=rb_fetch())
+        self.assertEqual(r.price, 4.25)
+
+    def test_not_found(self):
+        with self.assertRaises(PriceLookupError):
+            lookup_price(Card(name="Nobody", game="Riftbound"), fetch=rb_fetch())
+
+
 class DetectSourceTest(unittest.TestCase):
     def test_games(self):
         for game, source in [
+            ("Riftbound", "riftbound"), ("Riftbound: League of Legends", "riftbound"),
             ("Magic", "scryfall"), ("MTG", "scryfall"), ("Magic: The Gathering", "scryfall"),
             ("Pokemon", "pokemon"), ("Pokémon", "pokemon"), ("pokemon tcg", "pokemon"),
             ("Yu-Gi-Oh!", "yugioh"), ("yugioh", "yugioh"),
