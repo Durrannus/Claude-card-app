@@ -6,6 +6,7 @@ from datetime import date
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
+from . import theme
 from .db import Card, CardDatabase
 from .meta import (
     BATTLEFIELDS, CHAMPION, LEGEND, MAIN, RUNES, SECTIONS, Deck, MetaTracker, card_key, parse_decklist,
@@ -17,18 +18,18 @@ TOP_CHOICES = {"All placements": None, "Winners only": 1, "Top 4": 4, "Top 8": 8
 
 DECK_COLUMNS = [
     ("date", "Date", 95, "center"),
-    ("event", "Event", 150, "w"),
-    ("player", "Player", 100, "w"),
+    ("event", "Event", 140, "w"),
+    ("player", "Player", 90, "w"),
     ("legend", "Legend", 170, "w"),
-    ("placement", "Place", 50, "center"),
+    ("placement", "Place", 62, "center"),
 ]
 USAGE_COLUMNS = [
     ("name", "Card", 200, "w"),
     ("section", "Section", 90, "w"),
-    ("decks", "Decks", 55, "center"),
-    ("share", "% of decks", 90, "center"),
-    ("avg", "Avg copies", 90, "center"),
-    ("owned", "You own", 75, "center"),
+    ("decks", "Decks", 68, "center"),
+    ("share", "Play rate", 90, "center"),
+    ("avg", "Avg copies", 100, "center"),
+    ("owned", "Owned", 72, "center"),
 ]
 LEGEND_COLUMNS = [
     ("legend", "Legend", 260, "w"),
@@ -76,10 +77,13 @@ class DeckDialog(tk.Toplevel):
         self.transient(parent)
         self.result: Deck | None = None
 
-        form = ttk.Frame(self, padding=12)
+        form = ttk.Frame(self, padding=20)
         form.pack(fill="both", expand=True)
         form.columnconfigure(1, weight=1)
-        form.rowconfigure(6, weight=1)
+        form.rowconfigure(7, weight=1)
+        ttk.Label(form, text="Add decklist", style="Section.TLabel", font=theme.font(14, "bold")).grid(
+            row=0, column=0, columnspan=3, sticky="w", pady=(0, 10)
+        )
 
         self.vars = {k: tk.StringVar() for k in ("event", "player", "placement", "date", "legend", "name")}
         self.vars["date"].set(date.today().isoformat())
@@ -91,15 +95,20 @@ class DeckDialog(tk.Toplevel):
             ("Legend", "legend", "Filled in from the decklist if left blank"),
             ("Deck name", "name", "optional"),
         ]
-        for i, (label, key, hint) in enumerate(fields):
-            ttk.Label(form, text=label).grid(row=i, column=0, sticky="w", padx=(0, 8), pady=2)
-            ttk.Entry(form, textvariable=self.vars[key], width=40).grid(row=i, column=1, sticky="ew", pady=2)
-            ttk.Label(form, text=hint, foreground="#666").grid(row=i, column=2, sticky="w", padx=(8, 0))
+        for i, (label, key, hint) in enumerate(fields, start=1):
+            ttk.Label(form, text=label, style="Muted.TLabel").grid(row=i, column=0, sticky="w", padx=(0, 12), pady=4)
+            ttk.Entry(form, textvariable=self.vars[key], width=40).grid(row=i, column=1, sticky="ew", pady=4)
+            ttk.Label(form, text=hint, style="Muted.TLabel", font=theme.font(9)).grid(
+                row=i, column=2, sticky="w", padx=(10, 0)
+            )
 
-        ttk.Label(form, text="Decklist\n(paste the\nexported text)").grid(row=6, column=0, sticky="nw", pady=(8, 0))
+        ttk.Label(form, text="Decklist\n(paste the\nexported text)", style="Muted.TLabel").grid(
+            row=7, column=0, sticky="nw", pady=(10, 0)
+        )
         text_frame = ttk.Frame(form)
-        text_frame.grid(row=6, column=1, columnspan=2, sticky="nsew", pady=(8, 0))
-        self.text = tk.Text(text_frame, width=70, height=20, wrap="none", undo=True)
+        text_frame.grid(row=7, column=1, columnspan=2, sticky="nsew", pady=(10, 0))
+        self.text = tk.Text(text_frame, width=70, height=18, wrap="none", undo=True)
+        theme.style_text(self.text)
         scroll = ttk.Scrollbar(text_frame, orient="vertical", command=self.text.yview)
         self.text.configure(yscrollcommand=scroll.set)
         self.text.pack(side="left", fill="both", expand=True)
@@ -107,14 +116,14 @@ class DeckDialog(tk.Toplevel):
         self.text.bind("<<Modified>>", self._update_preview)
 
         self.preview = tk.StringVar(value="Paste a decklist above.")
-        ttk.Label(form, textvariable=self.preview, foreground="#555").grid(
-            row=7, column=1, columnspan=2, sticky="w", pady=(4, 0)
+        ttk.Label(form, textvariable=self.preview, style="Good.TLabel").grid(
+            row=8, column=1, columnspan=2, sticky="w", pady=(6, 0)
         )
 
         buttons = ttk.Frame(form)
-        buttons.grid(row=8, column=0, columnspan=3, sticky="e", pady=(10, 0))
+        buttons.grid(row=9, column=0, columnspan=3, sticky="e", pady=(16, 0))
         ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side="right")
-        ttk.Button(buttons, text="Save deck", command=self._save).pack(side="right", padx=(0, 6))
+        ttk.Button(buttons, text="Save deck", style="Accent.TButton", command=self._save).pack(side="right", padx=(0, 8))
         self.bind("<Escape>", lambda e: self.destroy())
 
         self.text.focus_set()
@@ -150,39 +159,54 @@ class DeckDialog(tk.Toplevel):
 
 class MetaTrackerTab(ttk.Frame):
     def __init__(self, parent: tk.Misc, db: CardDatabase, on_collection_changed=None):
-        super().__init__(parent, padding=8)
+        super().__init__(parent, padding=(16, 14, 16, 0))
         self.db = db
         self.meta = MetaTracker(db)
         self.on_collection_changed = on_collection_changed or (lambda: None)
         self._usage = []
 
+        tiles = ttk.Frame(self)
+        tiles.pack(fill="x", pady=(0, 14))
+        self.tiles = {
+            "decks": theme.StatTile(tiles, "Decklists"),
+            "events": theme.StatTile(tiles, "Events"),
+            "legend": theme.StatTile(tiles, "Most played legend", gold=True),
+            "short": theme.StatTile(tiles, "Meta cards you're short on"),
+        }
+        for i, tile in enumerate(self.tiles.values()):
+            tiles.columnconfigure(i, weight=1, uniform="tile")
+            tile.grid(row=0, column=i, sticky="ew", padx=(0 if i == 0 else 10, 0))
+
         self._build_filters()
-        self._build_body()
         self.status = tk.StringVar()
-        ttk.Label(self, textvariable=self.status, anchor="w").pack(fill="x", pady=(6, 0))
+        ttk.Label(self, textvariable=self.status, style="Status.TLabel", anchor="w").pack(
+            side="bottom", fill="x", pady=(10, 0)
+        )
+        self._build_body()
         self.refresh()
 
     # --- layout ------------------------------------------------------------
 
     def _build_filters(self) -> None:
         bar = ttk.Frame(self)
-        bar.pack(fill="x", pady=(0, 4))
-        ttk.Label(bar, text="Legend:").pack(side="left")
+        bar.pack(fill="x", pady=(0, 8))
+        ttk.Label(bar, text="Legend", style="Muted.TLabel").pack(side="left")
         self.legend_var = tk.StringVar(value=ALL_LEGENDS)
         self.legend_box = ttk.Combobox(bar, textvariable=self.legend_var, state="readonly", width=30)
-        self.legend_box.pack(side="left", padx=(4, 12))
+        self.legend_box.pack(side="left", padx=(6, 16))
         self.legend_box.bind("<<ComboboxSelected>>", lambda _: self.refresh())
 
-        ttk.Label(bar, text="Finish:").pack(side="left")
+        ttk.Label(bar, text="Finish", style="Muted.TLabel").pack(side="left")
         self.top_var = tk.StringVar(value="All placements")
         top_box = ttk.Combobox(bar, textvariable=self.top_var, values=list(TOP_CHOICES), state="readonly", width=14)
-        top_box.pack(side="left", padx=(4, 12))
+        top_box.pack(side="left", padx=(6, 16))
         top_box.bind("<<ComboboxSelected>>", lambda _: self.refresh())
 
-        ttk.Label(bar, text="Since (YYYY-MM-DD):").pack(side="left")
+        ttk.Label(bar, text="Since", style="Muted.TLabel").pack(side="left")
         self.since_var = tk.StringVar()
         since = ttk.Entry(bar, textvariable=self.since_var, width=12)
-        since.pack(side="left", padx=(4, 12))
+        since.pack(side="left", padx=(6, 4))
+        ttk.Label(bar, text="YYYY-MM-DD", style="Muted.TLabel", font=theme.font(9)).pack(side="left", padx=(0, 16))
         since.bind("<Return>", lambda _: self.refresh())
         since.bind("<FocusOut>", lambda _: self.refresh())
 
@@ -190,13 +214,15 @@ class MetaTrackerTab(ttk.Frame):
         ttk.Checkbutton(bar, text="Include runes", variable=self.runes_var, command=self.refresh).pack(side="left")
 
         actions = ttk.Frame(self)
-        actions.pack(fill="x", pady=(0, 6))
-        ttk.Button(actions, text="Add decklist…", command=self.add_deck).pack(side="left", padx=(0, 2))
-        ttk.Button(actions, text="Import .txt files…", command=self.import_files).pack(side="left", padx=2)
-        ttk.Button(actions, text="View deck", command=self.view_deck).pack(side="left", padx=2)
-        ttk.Button(actions, text="Delete deck", command=self.delete_decks).pack(side="left", padx=2)
-        ttk.Button(actions, text="Add missing cards to wishlist", command=self.add_missing_to_wishlist).pack(
-            side="right", padx=2
+        actions.pack(fill="x", pady=(0, 10))
+        ttk.Button(actions, text="+  Add decklist", style="Accent.TButton", command=self.add_deck).pack(
+            side="left", padx=(0, 6)
+        )
+        ttk.Button(actions, text="Import .txt files…", command=self.import_files).pack(side="left", padx=(0, 6))
+        ttk.Button(actions, text="View deck", command=self.view_deck).pack(side="left", padx=(0, 6))
+        ttk.Button(actions, text="Delete deck", style="Danger.TButton", command=self.delete_decks).pack(side="left")
+        ttk.Button(actions, text="★  Add missing cards to wishlist", command=self.add_missing_to_wishlist).pack(
+            side="right"
         )
 
     def _make_tree(self, parent, columns, height=None) -> ttk.Treeview:
@@ -208,6 +234,7 @@ class MetaTrackerTab(ttk.Frame):
             tree.column(key, width=width, anchor=anchor)
         scroll = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
         tree.configure(yscrollcommand=scroll.set)
+        theme.stripe(tree)
         tree.bind("<Control-a>", lambda _: tree.selection_set(tree.get_children()))
         tree.pack(side="left", fill="both", expand=True)
         scroll.pack(side="right", fill="y")
@@ -218,28 +245,28 @@ class MetaTrackerTab(ttk.Frame):
         body = ttk.Panedwindow(self, orient="horizontal")
         body.pack(fill="both", expand=True)
 
-        decks = ttk.Labelframe(body, text="Decklists", padding=4)
+        decks = ttk.Labelframe(body, text="Decklists")
         self.deck_tree = self._make_tree(decks, DECK_COLUMNS)
         self.deck_tree.bind("<Double-1>", lambda _: self.view_deck())
         self.deck_tree.bind("<Delete>", lambda _: self.delete_decks())
         body.add(decks, weight=2)
 
-        stats = ttk.Notebook(body)
-        usage_tab = ttk.Frame(stats, padding=4)
+        stats = ttk.Notebook(body, style="Inner.TNotebook")
+        usage_tab = ttk.Frame(stats, style="Header.TFrame", padding=8)
         self.usage_tree = self._make_tree(usage_tab, USAGE_COLUMNS)
-        self.usage_tree.tag_configure("have", foreground="#1b7a2e")
-        self.usage_tree.tag_configure("short", foreground="#b3261e")
-        ttk.Label(usage_tab, foreground="#555", text=(
-            "Green: you own enough copies.  Red: you own fewer than the average "
-            "number played.  Select cards and click \"Add missing cards to wishlist\"."
-        ), wraplength=520).pack(fill="x", pady=(4, 0))
+        self.usage_tree.tag_configure("have", foreground=theme.GOOD)
+        self.usage_tree.tag_configure("short", foreground=theme.BAD)
+        ttk.Label(usage_tab, style="Legend.TLabel", text=(
+            "Play rate: share of decks that run the card.  Green: you own enough copies.  "
+            "Red: you own fewer than the average number played.  Select cards and click \"Add missing cards to wishlist\"."
+        ), wraplength=560).pack(fill="x", pady=(8, 0))
         stats.add(usage_tab, text="Most played cards")
 
-        legend_tab = ttk.Frame(stats, padding=4)
+        legend_tab = ttk.Frame(stats, style="Header.TFrame", padding=8)
         self.legend_tree = self._make_tree(legend_tab, LEGEND_COLUMNS)
         self.legend_tree.bind("<Double-1>", self._filter_to_legend)
-        ttk.Label(legend_tab, foreground="#555",
-                  text="Double-click a legend to see the cards its decks play.").pack(fill="x", pady=(4, 0))
+        ttk.Label(legend_tab, style="Legend.TLabel",
+                  text="Double-click a legend to see the cards its decks play.").pack(fill="x", pady=(8, 0))
         stats.add(legend_tab, text="Legends")
         self.stats_tabs = stats
         self.usage_tab = usage_tab
@@ -263,8 +290,8 @@ class MetaTrackerTab(ttk.Frame):
 
         decks = self.meta.decks(legend, since, top)
         self.deck_tree.delete(*self.deck_tree.get_children())
-        for d in decks:
-            self.deck_tree.insert("", "end", iid=str(d.id), values=[
+        for i, d in enumerate(decks):
+            self.deck_tree.insert("", "end", iid=str(d.id), tags=(theme.row_tag(i),), values=[
                 d.date, d.event, d.player, d.legend, d.placement or ""
             ])
 
@@ -272,20 +299,32 @@ class MetaTrackerTab(ttk.Frame):
         self.usage_tree.delete(*self.usage_tree.get_children())
         for i, u in enumerate(self._usage):
             tag = "have" if u.owned >= typical_copies(u.avg_copies) else "short"
-            self.usage_tree.insert("", "end", iid=str(i), tags=(tag,), values=[
+            self.usage_tree.insert("", "end", iid=str(i), tags=(tag, theme.row_tag(i)), values=[
                 u.name, u.section, u.decks, f"{u.share:.0%}", f"{u.avg_copies:.1f}", u.owned
             ])
 
         self.legend_tree.delete(*self.legend_tree.get_children())
-        for s in self.meta.legend_shares(since, top):
-            self.legend_tree.insert("", "end", values=[
+        shares = self.meta.legend_shares(since, top)
+        for i, s in enumerate(shares):
+            self.legend_tree.insert("", "end", tags=(theme.row_tag(i),), values=[
                 s.legend, s.decks, f"{s.share:.0%}", s.best_placement or ""
             ])
 
         events = {d.event for d in decks if d.event}
-        shown = f"{len(decks)} decklists from {len(events)} events"
+        shown = (f"{len(decks)} decklist{'s' if len(decks) != 1 else ''} from "
+                 f"{len(events)} event{'s' if len(events) != 1 else ''}")
         total = len(self.meta.decks())
         self.status.set(shown if len(decks) == total else f"{shown} (filtered from {total})")
+        self.tiles["decks"].value.set(f"{len(decks):,}")
+        self.tiles["events"].value.set(f"{len(events):,}")
+        top_legend = shares[0] if shares and not legend else None
+        self.tiles["legend"].value.set(
+            f"{top_legend.legend.split(',')[0].split(' - ')[0]}  {top_legend.share:.0%}" if top_legend
+            else (legend.split(",")[0].split(" - ")[0] if legend else "—")
+        )
+        self.tiles["short"].value.set(
+            f"{sum(1 for u in self._usage if u.owned < typical_copies(u.avg_copies))} of {len(self._usage)}"
+        )
 
     def _filter_to_legend(self, _event=None) -> None:
         sel = self.legend_tree.selection()
@@ -347,9 +386,11 @@ class MetaTrackerTab(ttk.Frame):
         win = tk.Toplevel(self)
         win.title(" – ".join(filter(None, [deck.legend, deck.player, deck.event])) or "Deck")
         text = tk.Text(win, width=60, height=34, wrap="word")
+        theme.style_text(text)
+        text.configure(background=theme.SURFACE, padx=16, pady=12, spacing1=2)
         text.pack(fill="both", expand=True)
-        text.tag_configure("heading", font=("TkDefaultFont", 10, "bold"))
-        text.tag_configure("short", foreground="#b3261e")
+        text.tag_configure("heading", font=theme.font(11, "bold"), foreground=theme.GOLD, spacing1=10)
+        text.tag_configure("short", foreground=theme.BAD)
         header = [deck.date, deck.event, deck.player,
                   f"Placed {deck.placement}" if deck.placement else "", deck.name]
         text.insert("end", " · ".join(filter(None, header)) + "\n")

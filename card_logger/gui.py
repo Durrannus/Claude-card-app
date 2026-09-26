@@ -11,7 +11,7 @@ from dataclasses import replace
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from . import pricing
+from . import pricing, theme
 from .db import CONDITIONS, IMAGE_TYPES, Card, CardDatabase
 
 try:  # Pillow is optional; without it only PNG and GIF photos can be previewed.
@@ -25,7 +25,7 @@ DEFAULT_GAME = "Riftbound"
 KNOWN_GAMES = ["Riftbound", "Magic", "Pokémon", "Yu-Gi-Oh!"]
 RARITIES = ["Common", "Uncommon", "Rare", "Epic", "Showcase", "Promo"]
 IMAGE_FILETYPES = [("Images", " ".join(f"*{ext}" for ext in IMAGE_TYPES)), ("All files", "*.*")]
-PREVIEW_SIZE = (260, 360)
+PREVIEW_SIZE = (210, 293)  # trading card proportions
 
 # (field, heading, width, anchor)
 COLUMNS = [
@@ -114,9 +114,12 @@ class CardDialog(tk.Toplevel):
         self.photo: str | None = None
         self._card = card or Card(name="")
 
-        form = ttk.Frame(self, padding=12)
+        form = ttk.Frame(self, padding=20)
         form.pack(fill="both", expand=True)
         form.columnconfigure(1, weight=1)
+        ttk.Label(form, text=title, style="Section.TLabel", font=theme.font(14, "bold")).grid(
+            row=0, column=0, columnspan=2, sticky="w", pady=(0, 10)
+        )
 
         self.vars = {
             "name": tk.StringVar(value=self._card.name),
@@ -154,25 +157,26 @@ class CardDialog(tk.Toplevel):
             ("Photo", photo_row),
             ("", ttk.Checkbutton(form, text="On my wishlist (I don't own it yet)", variable=self.wishlist_var)),
         ]
-        for i, (label, widget) in enumerate(rows):
-            ttk.Label(form, text=label).grid(row=i, column=0, sticky="w", pady=3, padx=(0, 8))
-            widget.grid(row=i, column=1, sticky="ew", pady=3)
+        for i, (label, widget) in enumerate(rows, start=1):
+            ttk.Label(form, text=label, style="Muted.TLabel").grid(row=i, column=0, sticky="w", pady=4, padx=(0, 12))
+            widget.grid(row=i, column=1, sticky="ew", pady=4)
 
         self.lookup_status = tk.StringVar()
-        ttk.Label(form, textvariable=self.lookup_status, foreground="#555", wraplength=330).grid(
-            row=len(rows), column=1, sticky="w"
+        ttk.Label(form, textvariable=self.lookup_status, style="Good.TLabel", wraplength=360).grid(
+            row=len(rows) + 1, column=1, sticky="w"
         )
 
-        notes_row = len(rows) + 1
-        ttk.Label(form, text="Notes").grid(row=notes_row, column=0, sticky="nw", pady=3)
+        notes_row = len(rows) + 2
+        ttk.Label(form, text="Notes", style="Muted.TLabel").grid(row=notes_row, column=0, sticky="nw", pady=4)
         self.notes = tk.Text(form, width=40, height=4, wrap="word")
+        theme.style_text(self.notes)
         self.notes.insert("1.0", self._card.notes)
-        self.notes.grid(row=notes_row, column=1, sticky="ew", pady=3)
+        self.notes.grid(row=notes_row, column=1, sticky="ew", pady=4)
 
         buttons = ttk.Frame(form)
-        buttons.grid(row=notes_row + 1, column=0, columnspan=2, sticky="e", pady=(10, 0))
+        buttons.grid(row=notes_row + 1, column=0, columnspan=2, sticky="e", pady=(16, 0))
         ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side="right")
-        ttk.Button(buttons, text="Save", command=self._save).pack(side="right", padx=(0, 6))
+        ttk.Button(buttons, text="Save card", style="Accent.TButton", command=self._save).pack(side="right", padx=(0, 8))
 
         self.bind("<Return>", lambda e: self._save() if e.widget is not self.notes else None)
         self.bind("<Escape>", lambda e: self.destroy())
@@ -255,61 +259,75 @@ class CardDialog(tk.Toplevel):
 
 class CardLoggerApp(ttk.Frame):
     def __init__(self, parent: tk.Misc, db: CardDatabase):
-        super().__init__(parent, padding=8)
-        root = self.root = parent.winfo_toplevel()
+        super().__init__(parent, padding=(16, 14, 16, 0))
+        self.root = parent.winfo_toplevel()
         self.db = db
         self.busy = False
 
+        self._build_tiles()
         self._build_toolbar()
-        self._build_body()
         self.status = tk.StringVar()
-        ttk.Label(self, textvariable=self.status, anchor="w").pack(fill="x", pady=(6, 0))
+        ttk.Label(self, textvariable=self.status, style="Status.TLabel", anchor="w").pack(
+            side="bottom", fill="x", pady=(10, 0)
+        )
+        self._build_body()
         self.refresh()
 
     # --- layout ------------------------------------------------------------
 
+    def _build_tiles(self) -> None:
+        tiles = ttk.Frame(self)
+        tiles.pack(fill="x", pady=(0, 14))
+        self.tiles = {
+            "value": theme.StatTile(tiles, "Collection value", gold=True),
+            "cards": theme.StatTile(tiles, "Cards owned"),
+            "unique": theme.StatTile(tiles, "Different cards"),
+            "wishlist": theme.StatTile(tiles, "Wishlist to complete"),
+        }
+        for i, tile in enumerate(self.tiles.values()):
+            tiles.columnconfigure(i, weight=1, uniform="tile")
+            tile.grid(row=0, column=i, sticky="ew", padx=(0 if i == 0 else 10, 0))
+
     def _build_toolbar(self) -> None:
         top = ttk.Frame(self)
-        top.pack(fill="x", pady=(0, 4))
+        top.pack(fill="x", pady=(0, 8))
 
         self.view_var = tk.StringVar(value=COLLECTION)
         for text, value in [("My collection", COLLECTION), ("Wishlist", WISHLIST)]:
-            ttk.Radiobutton(top, text=text, value=value, variable=self.view_var,
-                            command=self._change_view).pack(side="left", padx=(0, 8))
-        ttk.Separator(top, orient="vertical").pack(side="left", fill="y", padx=6)
+            ttk.Radiobutton(top, text=text, value=value, variable=self.view_var, style="Segment.TRadiobutton",
+                            command=self._change_view).pack(side="left")
 
-        ttk.Label(top, text="Search:").pack(side="left")
+        ttk.Label(top, text="Search", style="Muted.TLabel").pack(side="left", padx=(20, 6))
         self.search_var = tk.StringVar()
         self.search_var.trace_add("write", lambda *_: self.refresh())
-        ttk.Entry(top, textvariable=self.search_var, width=28).pack(side="left", padx=(4, 10))
+        ttk.Entry(top, textvariable=self.search_var, width=26).pack(side="left", padx=(0, 10))
 
         self.game_var = tk.StringVar(value=ALL_GAMES)
-        self.game_box = ttk.Combobox(top, textvariable=self.game_var, state="readonly", width=18)
+        self.game_box = ttk.Combobox(top, textvariable=self.game_var, state="readonly", width=16)
         self.game_box.pack(side="left")
         self.game_box.bind("<<ComboboxSelected>>", lambda _: self.refresh())
+        ttk.Button(top, text="+  Add card", style="Accent.TButton", command=self.add_card).pack(side="right")
 
         bar = ttk.Frame(self)
-        bar.pack(fill="x", pady=(0, 6))
-        ttk.Button(bar, text="Add card", command=self.add_card).pack(side="left", padx=(0, 2))
-        ttk.Button(bar, text="Edit", command=self.edit_selected).pack(side="left", padx=2)
-        ttk.Button(bar, text="Delete", command=self.delete_selected).pack(side="left", padx=2)
+        bar.pack(fill="x", pady=(0, 10))
+        ttk.Button(bar, text="Edit", command=self.edit_selected).pack(side="left", padx=(0, 6))
+        ttk.Button(bar, text="Delete", style="Danger.TButton", command=self.delete_selected).pack(side="left", padx=(0, 6))
         self.move_button = ttk.Button(bar, command=self.move_selected)
-        self.move_button.pack(side="left", padx=2)
-        self.price_button = ttk.Button(bar, text="Update prices", command=self.update_prices)
-        self.price_button.pack(side="left", padx=2)
-        ttk.Button(bar, text="Export CSV", command=self.export_csv).pack(side="right", padx=2)
-        ttk.Button(bar, text="Import CSV", command=self.import_csv).pack(side="right", padx=2)
+        self.move_button.pack(side="left", padx=(0, 6))
+        self.price_button = ttk.Button(bar, text="$  Update prices", command=self.update_prices)
+        self.price_button.pack(side="left")
+        ttk.Button(bar, text="Export CSV", command=self.export_csv).pack(side="right")
+        ttk.Button(bar, text="Import CSV", command=self.import_csv).pack(side="right", padx=(0, 6))
 
     def _build_body(self) -> None:
         body = ttk.Frame(self)
         body.pack(fill="both", expand=True)
 
         # Packed first so it keeps its width and the table shrinks instead.
-        details = ttk.Frame(body, padding=(10, 0, 0, 0), width=PREVIEW_SIZE[0] + 20)
-        details.pack(side="right", fill="y")
+        details = ttk.Frame(body, style="Card.TFrame", padding=14, width=PREVIEW_SIZE[0] + 70)
+        details.pack(side="right", fill="y", padx=(12, 0))
         details.pack_propagate(False)
-
-        table = ttk.Frame(body)
+        table = ttk.Frame(body, style="Card.TFrame", padding=1)
         self.tree = ttk.Treeview(
             table, columns=[c[0] for c in COLUMNS], show="headings", selectmode="extended"
         )
@@ -318,6 +336,7 @@ class CardLoggerApp(ttk.Frame):
             self.tree.column(field, width=width, anchor=anchor)
         scroll = ttk.Scrollbar(table, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=scroll.set)
+        theme.stripe(self.tree)
         self.tree.pack(side="left", fill="both", expand=True)
         scroll.pack(side="right", fill="y")
         table.pack(side="left", fill="both", expand=True)
@@ -328,19 +347,49 @@ class CardLoggerApp(ttk.Frame):
         self._sort_field = None
         self._sort_reverse = False
 
-        self.photo_label = ttk.Label(details, anchor="center", justify="center")
-        self.photo_label.pack(fill="x")
+        # Name and value first, so they stay visible on short screens.
+        self.detail_name = tk.StringVar()
+        self.detail_info = tk.StringVar()
+        self.detail_value = tk.StringVar()
+        self.detail_notes = tk.StringVar()
+        wrap = PREVIEW_SIZE[0] + 40
+        ttk.Label(details, textvariable=self.detail_name, style="CardName.TLabel", wraplength=wrap).pack(anchor="w")
+        ttk.Label(details, textvariable=self.detail_info, style="CardMuted.TLabel", wraplength=wrap,
+                  justify="left").pack(anchor="w", pady=(2, 4))
+        ttk.Label(details, textvariable=self.detail_value, style="CardSection.TLabel").pack(anchor="w", pady=(0, 10))
+
+        # Buttons and notes are pinned to the bottom so they're always visible;
+        # the photo slot gets whatever height is left.
+        photo_buttons = ttk.Frame(details, style="Header.TFrame")
+        photo_buttons.pack(side="bottom", pady=(10, 0))
+        self.add_photo_button = ttk.Button(photo_buttons, text="Add photo…", style="Small.TButton",
+                                           command=self.choose_photo)
+        self.add_photo_button.pack(side="left", padx=(0, 6))
+        self.open_photo_button = ttk.Button(photo_buttons, text="Open photo", style="Small.TButton",
+                                            command=self.open_photo)
+        self.open_photo_button.pack(side="left")
+        ttk.Label(details, textvariable=self.detail_notes, style="Card.TLabel", wraplength=wrap,
+                  justify="left").pack(side="bottom", anchor="w")
+
+        # A card-shaped slot that holds the photo, or a hint when there isn't one.
+        slot = tk.Frame(details, width=PREVIEW_SIZE[0], height=PREVIEW_SIZE[1], background=theme.RAISED,
+                        highlightthickness=1, highlightbackground=theme.BORDER)
+        # On short windows pack shrinks the slot; re-fit the photo when it does.
+        slot.pack(expand=True)
+        slot.pack_propagate(False)
+        slot.bind("<Configure>", self._slot_resized)
+        self._photo_slot = slot
+        self._photo_fit = PREVIEW_SIZE
+        self.photo_label = tk.Label(slot, background=theme.RAISED, foreground=theme.MUTED, font=theme.font(10),
+                                    justify="center", wraplength=PREVIEW_SIZE[0] - 20)
+        self.photo_label.pack(fill="both", expand=True)
         self._photo_image = None  # keep a reference so Tk doesn't discard it
-        photo_buttons = ttk.Frame(details)
-        photo_buttons.pack(pady=6)
-        self.add_photo_button = ttk.Button(photo_buttons, text="Add photo…", command=self.choose_photo)
-        self.add_photo_button.pack(side="left", padx=2)
-        self.open_photo_button = ttk.Button(photo_buttons, text="Open photo", command=self.open_photo)
-        self.open_photo_button.pack(side="left", padx=2)
-        self.detail_text = tk.StringVar()
-        ttk.Label(details, textvariable=self.detail_text, wraplength=PREVIEW_SIZE[0], justify="left").pack(
-            fill="x", anchor="w"
-        )
+
+    def _slot_resized(self, event) -> None:
+        size = (min(event.width, PREVIEW_SIZE[0]) - 4, min(event.height, PREVIEW_SIZE[1]) - 4)
+        if size != self._photo_fit and min(size) > 20:
+            self._photo_fit = size
+            self.show_details()
 
     # --- display -----------------------------------------------------------
 
@@ -371,11 +420,12 @@ class CardLoggerApp(ttk.Frame):
 
         selected = set(self.tree.selection())
         self.tree.delete(*self.tree.get_children())
-        for card in cards:
+        for i, card in enumerate(cards):
             self.tree.insert(
                 "",
                 "end",
                 iid=str(card.id),
+                tags=(theme.row_tag(i),),
                 values=[
                     f"${card.value:,.2f}" if field == "value" else getattr(card, field)
                     for field, *_ in COLUMNS
@@ -388,10 +438,16 @@ class CardLoggerApp(ttk.Frame):
         owned = self.db.stats()
         wanted = self.db.stats(wishlist=True)
         self.status.set(
-            f"Showing {len(cards)} entries ({shown_qty} cards, ${shown_value:,.2f})    |    "
-            f"Collection: {owned['entries']} entries, {owned['total_cards']} cards, "
-            f"worth ${owned['total_value']:,.2f}    |    "
-            f"Wishlist: {wanted['entries']} entries, ${wanted['total_value']:,.2f} to complete"
+            f"Showing {len(cards)} {'entry' if len(cards) == 1 else 'entries'} · "
+            f"{shown_qty} cards · ${shown_value:,.2f}"
+        )
+        self.tiles["value"].value.set(f"${owned['total_value']:,.2f}")
+        self.tiles["cards"].value.set(f"{owned['total_cards']:,}")
+        self.tiles["unique"].value.set(f"{owned['entries']:,}")
+        self.tiles["wishlist"].value.set(
+            f"${wanted['total_value']:,.2f}"
+            + (f"  ·  {wanted['total_cards']} card{'s' if wanted['total_cards'] != 1 else ''}"
+               if wanted["total_cards"] else "")
         )
         self.show_details()
 
@@ -402,7 +458,8 @@ class CardLoggerApp(ttk.Frame):
         if card is None:
             self.photo_label.configure(image="", text="Select a card to see its photo" if not ids
                                        else f"{len(ids)} cards selected")
-            self.detail_text.set("")
+            for var in (self.detail_name, self.detail_info, self.detail_value, self.detail_notes):
+                var.set("")
             self.add_photo_button.state(["disabled"])
             self.open_photo_button.state(["disabled"])
             return
@@ -414,7 +471,7 @@ class CardLoggerApp(ttk.Frame):
         if card.image_path and not has_file:
             self.photo_label.configure(image="", text="Photo file is missing")
         elif card.image_path:
-            self._photo_image = load_photo(card.image_path, PREVIEW_SIZE)
+            self._photo_image = load_photo(card.image_path, self._photo_fit)
             if self._photo_image:
                 self.photo_label.configure(image=self._photo_image, text="")
             else:
@@ -423,15 +480,19 @@ class CardLoggerApp(ttk.Frame):
                                    "Click \"Open photo\", or install Pillow\n(pip install pillow)."
                 )
         else:
-            self.photo_label.configure(image="", text="No photo yet")
+            self.photo_label.configure(image="", text="No photo yet\n\nClick \"Add photo…\" below")
 
-        lines = [card.name]
-        lines += [x for x in (card.game, " ".join(filter(None, (card.set_name, f"#{card.number}" if card.number else ""))))
-                  if x]
-        lines.append(f"{card.quantity} × ${card.value:,.2f} = ${card.quantity * card.value:,.2f}")
-        if card.notes:
-            lines += ["", card.notes]
-        self.detail_text.set("\n".join(lines))
+        where = " ".join(filter(None, (card.set_name, f"#{card.number}" if card.number else "")))
+        self.detail_name.set(card.name)
+        self.detail_info.set("\n".join(filter(None, [
+            " · ".join(filter(None, (card.game, where))),
+            " · ".join(filter(None, (card.rarity, card.condition))),
+        ])))
+        self.detail_value.set(
+            f"${card.value:,.2f}" if card.quantity == 1
+            else f"{card.quantity} × ${card.value:,.2f} = ${card.quantity * card.value:,.2f}"
+        )
+        self.detail_notes.set(card.notes)
 
     def sort_by(self, field: str) -> None:
         if self._sort_field == field:
@@ -606,23 +667,34 @@ def _sort_key(value):
     return value.lower() if isinstance(value, str) else value
 
 
-def main(db_path=None) -> None:
+def build_window(root: tk.Tk, db: CardDatabase):
+    """Lay out the main window; returns the (collection, meta tracker) tabs."""
     from .meta_gui import MetaTrackerTab
 
-    db = CardDatabase(db_path) if db_path else CardDatabase()
-    root = tk.Tk()
     root.title("Card Collection Logger")
-    root.geometry("1250x700")
-    root.minsize(900, 480)
+    # Fit the screen, up to a comfortable size.
+    width = min(1320, root.winfo_screenwidth() - 40)
+    height = min(860, root.winfo_screenheight() - 80)
+    root.geometry(f"{width}x{height}")
+    root.minsize(min(1000, width), min(600, height))
+    theme.apply_theme(root)
 
+    theme.header(root, "Riftbound collection, wishlist and meta tracker").pack(fill="x")
     tabs = ttk.Notebook(root)
-    tabs.pack(fill="both", expand=True)
+    tabs.pack(fill="both", expand=True, pady=(8, 12))
     collection = CardLoggerApp(tabs, db)
     meta = MetaTrackerTab(tabs, db, on_collection_changed=collection.refresh)
     tabs.add(collection, text="  Collection  ")
     tabs.add(meta, text="  Meta tracker  ")
     # Counts in each tab depend on the other, so refresh on switching.
     tabs.bind("<<NotebookTabChanged>>", lambda _: (collection.refresh(), meta.refresh()))
+    return tabs, collection, meta
+
+
+def main(db_path=None) -> None:
+    db = CardDatabase(db_path) if db_path else CardDatabase()
+    root = tk.Tk()
+    build_window(root, db)
     try:
         root.mainloop()
     finally:

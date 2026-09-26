@@ -5,6 +5,10 @@ built mainly for **Riftbound** (the League of Legends TCG) but works for any
 card game. It runs on your own computer and has no extra packages to
 install. Only price lookups need the internet.
 
+![Collection tab](docs/screenshot-collection.png)
+
+![Meta tracker tab](docs/screenshot-meta.png)
+
 ## What it does
 
 - Add, edit and delete cards: name, game, set, card number, rarity,
