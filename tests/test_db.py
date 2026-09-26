@@ -1,3 +1,4 @@
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -89,6 +90,109 @@ class CardDatabaseTest(unittest.TestCase):
             db.close()
             db = CardDatabase(path)
             self.assertEqual(db.search()[0].name, "Saved")
+            db.close()
+
+
+class WishlistTest(unittest.TestCase):
+    def setUp(self):
+        self.db = CardDatabase(":memory:")
+
+    def tearDown(self):
+        self.db.close()
+
+    def test_wishlist_kept_separate(self):
+        self.db.add(Card(name="Owned", value=5))
+        self.db.add(Card(name="Wanted", value=100, quantity=2, wishlist=True))
+        self.assertEqual([c.name for c in self.db.search()], ["Owned"])
+        self.assertEqual([c.name for c in self.db.search(wishlist=True)], ["Wanted"])
+        self.assertEqual(len(self.db.search(wishlist=None)), 2)
+        self.assertEqual(self.db.stats()["total_value"], 5)
+        self.assertEqual(self.db.stats(wishlist=True)["total_value"], 200)
+
+    def test_wishlist_in_csv(self):
+        self.db.add(Card(name="Wanted", wishlist=True))
+        self.db.add(Card(name="Owned"))
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "cards.csv"
+            self.assertEqual(self.db.export_csv(path), 2)
+            other = CardDatabase(":memory:")
+            other.import_csv(path)
+            self.assertEqual([c.name for c in other.search(wishlist=True)], ["Wanted"])
+            other.close()
+
+
+class PhotoTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+        self.db = CardDatabase(self.dir / "cards.db")
+        self.photo = self.dir / "my photo.png"
+        self.photo.write_bytes(b"not really a png")
+
+    def tearDown(self):
+        self.db.close()
+        self.tmp.cleanup()
+
+    def test_photo_copied_into_image_folder(self):
+        card = Card(name="Pikachu")
+        self.db.add(card)
+        self.db.set_image(card, self.photo)
+        stored = Path(self.db.get(card.id).image_path)
+        self.assertEqual(stored.parent, self.dir / "images")
+        self.assertEqual(stored.read_bytes(), b"not really a png")
+        self.assertTrue(self.photo.exists())  # original untouched
+
+    def test_replace_remove_and_delete_clean_up(self):
+        card = Card(name="Pikachu")
+        self.db.add(card)
+        self.db.set_image(card, self.photo)
+        first = Path(card.image_path)
+        other = self.dir / "other.jpg"
+        other.write_bytes(b"jpg")
+        self.db.set_image(card, other)
+        self.assertFalse(first.exists())
+        second = Path(card.image_path)
+        self.db.set_image(card, None)
+        self.assertFalse(second.exists())
+        self.assertEqual(self.db.get(card.id).image_path, "")
+
+        self.db.set_image(card, self.photo)
+        third = Path(card.image_path)
+        self.db.delete(card.id)
+        self.assertFalse(third.exists())
+        self.assertTrue(self.photo.exists())
+
+    def test_rejects_non_image(self):
+        card = Card(name="Pikachu")
+        self.db.add(card)
+        doc = self.dir / "notes.txt"
+        doc.write_text("hi")
+        with self.assertRaises(ValueError):
+            self.db.set_image(card, doc)
+
+
+class UpgradeTest(unittest.TestCase):
+    def test_opens_database_from_first_version(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "cards.db"
+            conn = sqlite3.connect(path)
+            conn.execute(
+                "CREATE TABLE cards (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, "
+                "game TEXT NOT NULL DEFAULT '', set_name TEXT NOT NULL DEFAULT '', "
+                "number TEXT NOT NULL DEFAULT '', rarity TEXT NOT NULL DEFAULT '', "
+                "condition TEXT NOT NULL DEFAULT '', quantity INTEGER NOT NULL DEFAULT 1, "
+                "value REAL NOT NULL DEFAULT 0, notes TEXT NOT NULL DEFAULT '', "
+                "date_added TEXT NOT NULL DEFAULT '')"
+            )
+            conn.execute("INSERT INTO cards (name) VALUES ('Old card')")
+            conn.commit()
+            conn.close()
+
+            db = CardDatabase(path)
+            card = db.search()[0]
+            self.assertEqual((card.name, card.wishlist, card.image_path), ("Old card", False, ""))
+            db.add(Card(name="New", wishlist=True))
+            self.assertEqual(len(db.search(wishlist=True)), 1)
             db.close()
 
 
