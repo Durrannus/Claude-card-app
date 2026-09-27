@@ -5,7 +5,8 @@ import webbrowser
 from datetime import date
 from tkinter import messagebox, ttk
 
-from . import market, pricing, theme
+from . import catalog, market, pricing, riftboundgg, theme
+from .catalog_gui import AllCardsView
 from .charts import LineChart
 from .db import CardDatabase
 from .meta import MetaTracker
@@ -15,7 +16,7 @@ PLAY_COLOR = "#1f9aaa"
 
 EBAY_SITES = ["ebay.com", "ebay.co.uk", "ebay.com.au", "ebay.ca", "ebay.de", "ebay.fr", "ebay.it", "ebay.es"]
 
-MY_CARDS, OPPORTUNITIES, EVERYTHING = "mine", "opportunities", "all"
+ALL_CARDS, MY_CARDS, OPPORTUNITIES, EVERYTHING = "catalog", "mine", "opportunities", "all"
 WINDOWS = {"Last 7 days": 7, "Last 14 days": 14, "Last 30 days": 30}
 SIGNAL_FILTERS = {
     "All signals": None,
@@ -145,15 +146,18 @@ class MarketTab(ttk.Frame):
             side="bottom", fill="x", pady=(10, 0)
         )
         self._build_body()
-        self.refresh()
+        self._switch_view()
 
-        if self.auto_var.get() and db.get_setting("last_auto_update") != date.today().isoformat():
+        # Fetch prices on first run (so every card shows straight away) and
+        # then once a day if automatic updates are on.
+        first_run = not db.get_setting("catalog_updated")
+        if first_run or (self.auto_var.get() and db.get_setting("last_auto_update") != date.today().isoformat()):
             self.after(1500, lambda: self.update_all_prices(silent=True))
 
     # --- layout ------------------------------------------------------------
 
     def _build_tiles(self) -> None:
-        tiles = ttk.Frame(self)
+        tiles = self.tiles_frame = ttk.Frame(self)
         tiles.pack(fill="x", pady=(0, 14))
         self.tiles = {
             "profit": theme.StatTile(tiles, "Profit on cards with a purchase price", gold=True),
@@ -166,21 +170,26 @@ class MarketTab(ttk.Frame):
             tile.grid(row=0, column=i, sticky="ew", padx=(0 if i == 0 else 10, 0))
 
     def _build_controls(self) -> None:
-        bar = ttk.Frame(self)
+        bar = self.controls_bar = ttk.Frame(self)
         bar.pack(fill="x", pady=(0, 10))
-        self.view_var = tk.StringVar(value=MY_CARDS)
-        for text, value in [("My cards", MY_CARDS), ("Buy opportunities", OPPORTUNITIES), ("Everything", EVERYTHING)]:
+        self.view_var = tk.StringVar(value=ALL_CARDS)
+        for text, value in [("All cards", ALL_CARDS), ("My cards", MY_CARDS),
+                            ("Buy opportunities", OPPORTUNITIES), ("Everything", EVERYTHING)]:
             ttk.Radiobutton(bar, text=text, value=value, variable=self.view_var, style="Segment.TRadiobutton",
-                            command=self.refresh).pack(side="left")
+                            command=self._switch_view).pack(side="left")
 
-        ttk.Label(bar, text="Compare", style="Muted.TLabel").pack(side="left", padx=(20, 6))
+        # Only the signal views use these.
+        self.signal_controls = ttk.Frame(bar)
+        ttk.Label(self.signal_controls, text="Compare", style="Muted.TLabel").pack(side="left", padx=(20, 6))
         self.window_var = tk.StringVar(value="Last 14 days")
-        box = ttk.Combobox(bar, textvariable=self.window_var, values=list(WINDOWS), state="readonly", width=13)
+        box = ttk.Combobox(self.signal_controls, textvariable=self.window_var, values=list(WINDOWS),
+                           state="readonly", width=13)
         box.pack(side="left")
         box.bind("<<ComboboxSelected>>", lambda _: self.refresh())
 
         self.signal_var = tk.StringVar(value="All signals")
-        box = ttk.Combobox(bar, textvariable=self.signal_var, values=list(SIGNAL_FILTERS), state="readonly", width=12)
+        box = ttk.Combobox(self.signal_controls, textvariable=self.signal_var, values=list(SIGNAL_FILTERS),
+                           state="readonly", width=12)
         box.pack(side="left", padx=(10, 0))
         box.bind("<<ComboboxSelected>>", lambda _: self.refresh())
 
@@ -193,8 +202,9 @@ class MarketTab(ttk.Frame):
                         ).pack(side="right", padx=(0, 12))
 
     def _build_body(self) -> None:
-        body = ttk.Frame(self)
-        body.pack(fill="both", expand=True)
+        # Two bodies share the space: the all-cards price list and the signal views.
+        self.all_cards = AllCardsView(self, self.db, self.meta, self.on_data_changed, lambda: self.site_var.get())
+        body = self.signal_body = ttk.Frame(self)
 
         details = ttk.Frame(body, style="Card.TFrame", padding=14, width=336)
         details.pack(side="right", fill="y", padx=(12, 0))
@@ -268,7 +278,24 @@ class MarketTab(ttk.Frame):
 
     # --- display -------------------------------------------------------------
 
+    def _switch_view(self) -> None:
+        catalog_view = self.view_var.get() == ALL_CARDS
+        if catalog_view:
+            # The tiles are about signals; the price list uses the room instead.
+            self.tiles_frame.pack_forget()
+            self.signal_body.pack_forget()
+            self.signal_controls.pack_forget()
+            self.all_cards.pack(fill="both", expand=True)
+        else:
+            self.tiles_frame.pack(fill="x", pady=(0, 14), before=self.controls_bar)
+            self.all_cards.pack_forget()
+            self.signal_controls.pack(side="left")
+            self.signal_body.pack(fill="both", expand=True)
+        self.refresh()
+
     def refresh(self) -> None:
+        if self.view_var.get() == ALL_CARDS:
+            self.all_cards.refresh()
         days = WINDOWS[self.window_var.get()]
         self.rows = market.analyse(self.db, self.meta, days=days)
         view = self.view_var.get()
@@ -308,6 +335,14 @@ class MarketTab(ttk.Frame):
         self.tiles["updated"].value.set(_friendly_day(last) if last else "Never")
 
         anchor = market.meta_anchor(self.meta)
+        if self.view_var.get() == ALL_CARDS:
+            if not self.busy:
+                updated = self.db.get_setting("catalog_updated")
+                self.status.set(
+                    f"Every Riftbound printing · TCGplayer market prices (USD) via riftbound.gg"
+                    + (f", updated {_friendly_day(updated).lower()}" if updated else "")
+                    + " · green/red = up/down 5%+ this week · click a heading to sort")
+            return
         if not self.busy:
             self.status.set(
                 f"{len(shown)} cards · meta move: last {days} days of decklists"
@@ -400,6 +435,12 @@ class MarketTab(ttk.Frame):
         cards = [c for c in self.db.search(wishlist=None) if pricing.supported(c)]
 
         def work(report):
+            report("Downloading every Riftbound card's price…")
+            cards_list, catalog_error = [], None
+            try:
+                cards_list = catalog.fetch()
+            except riftboundgg.FetchError as e:
+                catalog_error = str(e)
             snapshot, snapshot_error = {}, None
             try:
                 snapshot = pricing.riftbound_market_prices(report=report)
@@ -412,7 +453,7 @@ class MarketTab(ttk.Frame):
                     found.append((card.id, pricing.lookup_price(card).price))
                 except pricing.PriceLookupError as e:
                     failed.append((card.name, str(e)))
-            return snapshot, snapshot_error, found, failed
+            return cards_list, catalog_error, snapshot, snapshot_error, found, failed
 
         def done(result, error):
             self.busy = False
@@ -422,7 +463,9 @@ class MarketTab(ttk.Frame):
                 if not silent:
                     messagebox.showerror("Update prices", f"Price update stopped: {error}")
                 return
-            snapshot, snapshot_error, found, failed = result
+            cards_list, catalog_error, snapshot, snapshot_error, found, failed = result
+            if cards_list:
+                catalog.save(self.db, cards_list)
             for name, price in snapshot.values():
                 self.db.record_price(name, price, game="Riftbound", commit=False)
             self.db.conn.commit()
@@ -435,10 +478,12 @@ class MarketTab(ttk.Frame):
             self.on_data_changed()
             self.refresh()
             if silent:
-                self.status.set(f"Prices updated automatically: {len(found)} of your cards, "
-                                f"{len(snapshot)} Riftbound market prices.")
+                self.status.set(f"Prices updated: {len(cards_list):,} printings, {len(found)} of your cards."
+                                + (f" Problem: {catalog_error}" if catalog_error else ""))
                 return
-            lines = [f"Updated {len(found)} of {len(cards)} cards in your collection and wishlist."]
+            lines = [f"Downloaded current prices for {len(cards_list):,} Riftbound printings." if cards_list
+                     else f"Card price list not downloaded: {catalog_error}",
+                     f"Updated {len(found)} of {len(cards)} cards in your collection and wishlist."]
             lines.append(f"Saved today's price for {len(snapshot)} Riftbound cards." if snapshot
                          else f"Riftbound market prices not saved: {snapshot_error}")
             if failed:

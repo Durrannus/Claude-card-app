@@ -1,0 +1,288 @@
+"""The "All cards" view in the Market tab: every Riftbound printing with its price."""
+
+import tkinter as tk
+import webbrowser
+from tkinter import messagebox, ttk
+
+from . import catalog, market, theme
+from .charts import LineChart
+from .db import Card, CardDatabase, name_key
+from .meta import MetaTracker
+
+PRICE_COLOR = "#b8862a"
+PLAY_COLOR = "#1f9aaa"
+ALL_SETS, ALL_RARITIES = "All sets", "All rarities"
+
+# (key, heading, width, anchor, numeric)
+COLUMNS = [
+    ("name", "Card", 190, "w", False),
+    ("set", "Set", 100, "w", False),
+    ("rarity", "Rarity", 90, "w", False),
+    ("price", "Price", 80, "e", True),
+    ("d1", "1 day", 70, "center", True),
+    ("d7", "7 days", 76, "center", True),
+    ("cm", "Cardmarket", 112, "e", True),
+    ("play", "Play rate", 90, "center", True),
+    ("owned", "Own", 56, "center", True),
+]
+
+
+def _money(v: float) -> str:
+    return f"${v:,.2f}"
+
+
+def _pct(v: float | None) -> str:
+    return "" if v is None else ("0%" if abs(v) < 0.005 else f"{v:+.0%}")
+
+
+class AllCardsView(ttk.Frame):
+    """Searchable, sortable list of every printing, with details and price history."""
+
+    def __init__(self, parent, db: CardDatabase, meta: MetaTracker, on_data_changed, ebay_site):
+        super().__init__(parent)
+        self.db, self.meta = db, meta
+        self.on_data_changed = on_data_changed
+        self.ebay_site = ebay_site
+        self.cards: list[catalog.CatalogCard] = []
+        self.shown: list[catalog.CatalogCard] = []
+        self.play: dict[str, float] = {}
+        self.owned: dict[str, int] = {}
+        self.sort_key, self.sort_reverse = "price", True  # most valuable first
+
+        bar = ttk.Frame(self)
+        bar.pack(fill="x", pady=(0, 8))
+        ttk.Label(bar, text="Search", style="Muted.TLabel").pack(side="left")
+        self.search = tk.StringVar()
+        self.search.trace_add("write", lambda *_: self.fill())
+        ttk.Entry(bar, textvariable=self.search, width=24).pack(side="left", padx=(6, 12))
+        self.set_var, self.rarity_var = tk.StringVar(value=ALL_SETS), tk.StringVar(value=ALL_RARITIES)
+        self.set_box = ttk.Combobox(bar, textvariable=self.set_var, state="readonly", width=18)
+        self.set_box.pack(side="left")
+        self.rarity_box = ttk.Combobox(bar, textvariable=self.rarity_var, state="readonly", width=13)
+        self.rarity_box.pack(side="left", padx=(8, 0))
+        for box in (self.set_box, self.rarity_box):
+            box.bind("<<ComboboxSelected>>", lambda _: self.fill())
+        self.min_price = tk.BooleanVar(value=False)
+        ttk.Checkbutton(bar, text="$1 and up", variable=self.min_price, command=self.fill).pack(side="left", padx=12)
+        self.count = tk.StringVar()
+        ttk.Label(bar, textvariable=self.count, style="Muted.TLabel").pack(side="right")
+
+        body = ttk.Frame(self)
+        body.pack(fill="both", expand=True)
+        details = ttk.Frame(body, style="Card.TFrame", padding=14, width=336)
+        details.pack(side="right", fill="y", padx=(12, 0))
+        details.pack_propagate(False)
+        self._build_details(details)
+
+        left = ttk.Frame(body)
+        left.pack(side="left", fill="both", expand=True)
+        # Charts sit under the list, side by side, where there's width to spare.
+        charts = ttk.Frame(left)
+        charts.pack(side="bottom", fill="x", pady=(12, 0))
+        charts.columnconfigure((0, 1), weight=1, uniform="chart")
+        for col, (title, subtitle, attr, color, fmt, zero) in enumerate([
+            ("Price history", "this printing, per copy", "price_chart", PRICE_COLOR, _money, False),
+            ("Play rate", "% of decklists, weekly", "play_chart", PLAY_COLOR, lambda v: f"{v:.0%}", True),
+        ]):
+            box = ttk.Frame(charts, style="Card.TFrame", padding=(12, 8))
+            box.grid(row=0, column=col, sticky="nsew", padx=(0 if col == 0 else 12, 0))
+            heading = ttk.Frame(box, style="Header.TFrame")
+            heading.pack(anchor="w")
+            ttk.Label(heading, text=title, style="CardSection.TLabel").pack(side="left")
+            ttk.Label(heading, text="  " + subtitle, style="CardMuted.TLabel").pack(side="left")
+            chart = LineChart(box, color, fmt=fmt, zero_based=zero, height=110)
+            chart.pack(fill="both", expand=True, pady=(4, 0))
+            setattr(self, attr, chart)
+
+        table = ttk.Frame(left, style="Card.TFrame", padding=1)
+        table.pack(side="top", fill="both", expand=True)
+        self.tree = ttk.Treeview(table, columns=[c[0] for c in COLUMNS], show="headings", selectmode="browse")
+        for key, heading, width, anchor, _ in COLUMNS:
+            self.tree.heading(key, text=heading, command=lambda k=key: self.sort_by(k))
+            self.tree.column(key, width=width, anchor=anchor, minwidth=60 if key == "name" else width,
+                             stretch=key == "name")
+        theme.stripe(self.tree)
+        self.tree.tag_configure("up", foreground=theme.GOOD)
+        self.tree.tag_configure("down", foreground=theme.BAD)
+        scroll = ttk.Scrollbar(table, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scroll.set)
+        self.tree.pack(side="left", fill="both", expand=True)
+        scroll.pack(side="right", fill="y")
+        self.tree.bind("<<TreeviewSelect>>", lambda _: self.show_details())
+
+    def _build_details(self, panel) -> None:
+        self.d_name, self.d_info, self.d_price, self.d_facts = (tk.StringVar() for _ in range(4))
+        ttk.Label(panel, textvariable=self.d_name, style="CardName.TLabel", wraplength=306).pack(anchor="w")
+        ttk.Label(panel, textvariable=self.d_info, style="CardMuted.TLabel", wraplength=306,
+                  justify="left").pack(anchor="w", pady=(2, 6))
+        ttk.Label(panel, textvariable=self.d_price, style="CardSection.TLabel", font=theme.font(15, "bold")).pack(
+            anchor="w")
+        ttk.Label(panel, textvariable=self.d_facts, style="Card.TLabel", wraplength=306,
+                  justify="left").pack(anchor="w", pady=(4, 8))
+
+        buttons = ttk.Frame(panel, style="Header.TFrame")
+        buttons.pack(side="bottom", fill="x", pady=(8, 0))
+        buttons.columnconfigure((0, 1), weight=1, uniform="b")
+        self.buttons = [
+            ttk.Button(buttons, text="+ Add to collection", style="Small.TButton", command=self.add_to_collection),
+            ttk.Button(buttons, text="★ Add to wishlist", style="Small.TButton", command=self.add_to_wishlist),
+            ttk.Button(buttons, text="eBay sold ↗", style="Small.TButton", command=self.open_ebay),
+            ttk.Button(buttons, text="Card image ↗", style="Small.TButton", command=self.open_image),
+        ]
+        for i, b in enumerate(self.buttons):
+            b.grid(row=i // 2, column=i % 2, sticky="ew", padx=(0 if i % 2 == 0 else 4, 0), pady=(0 if i < 2 else 4, 0))
+
+
+    # --- data ----------------------------------------------------------------
+
+    def refresh(self) -> None:
+        self.cards = catalog.load(self.db)
+        self.play = {name_key(u.name): u.share for u in self.meta.card_usage(include_runes=True)}
+        self.owned = self.meta.owned_counts()
+        sets = sorted({c.set_name for c in self.cards if c.set_name})
+        rarities = sorted({c.rarity for c in self.cards if c.rarity})
+        self.set_box["values"] = [ALL_SETS] + sets
+        self.rarity_box["values"] = [ALL_RARITIES] + rarities
+        self.fill()
+
+    def _value(self, c: catalog.CatalogCard, key: str):
+        k = name_key(c.name)
+        return {
+            "name": c.name.lower(), "set": c.set_name.lower(), "rarity": c.rarity.lower(),
+            "price": c.main_price or None, "d1": c.change_pct(1), "d7": c.change_pct(7), "cm": c.cm_price or None,
+            "play": self.play.get(k, 0.0), "owned": self.owned.get(k, 0),
+        }[key]
+
+    def sort_by(self, key: str) -> None:
+        numeric = next(c[4] for c in COLUMNS if c[0] == key)
+        if self.sort_key == key:
+            self.sort_reverse = not self.sort_reverse
+        else:
+            self.sort_key, self.sort_reverse = key, numeric  # numbers: biggest first
+        self.fill()
+
+    def fill(self) -> None:
+        text = self.search.get().strip().lower()
+        want_set, want_rarity = self.set_var.get(), self.rarity_var.get()
+        shown = [c for c in self.cards
+                 if (not text or text in c.name.lower() or text in c.code.lower())
+                 and (want_set == ALL_SETS or c.set_name == want_set)
+                 and (want_rarity == ALL_RARITIES or c.rarity == want_rarity)
+                 and (not self.min_price.get() or c.main_price >= 1)]
+        # Cards with no value for the column (e.g. no price) always go last.
+        known = [c for c in shown if self._value(c, self.sort_key) is not None]
+        unknown = [c for c in shown if self._value(c, self.sort_key) is None]
+        known.sort(key=lambda c: self._value(c, self.sort_key), reverse=self.sort_reverse)
+        shown = known + unknown
+        self.shown = shown
+        for key, heading, *_ in COLUMNS:
+            arrow = (" ▼" if self.sort_reverse else " ▲") if key == self.sort_key else ""
+            self.tree.heading(key, text=heading + arrow)
+
+        selected = self.tree.selection()
+        keep = self.shown[int(selected[0])].code if selected and int(selected[0]) < len(self.shown) else None
+        self.tree.delete(*self.tree.get_children())
+        for i, c in enumerate(shown):
+            d7 = c.change_pct(7)
+            trend = "up" if d7 and d7 >= 0.05 else ("down" if d7 and d7 <= -0.05 else "")
+            k = name_key(c.name)
+            self.tree.insert("", "end", iid=str(i), tags=(theme.row_tag(i),) + ((trend,) if trend else ()), values=[
+                c.name, c.set_name, c.rarity,
+                (_money(c.main_price) + (" F" if c.is_foil_only else "")) if c.main_price else "—",
+                _pct(c.change_pct(1)), _pct(d7),
+                f"€{c.cm_price:,.2f}" if c.cm_price else "",
+                f"{self.play[k]:.0%}" if k in self.play else "",
+                self.owned.get(k) or "",
+            ])
+        total = len(self.cards)
+        self.count.set(f"{len(shown):,} of {total:,} printings" if total else "")
+        if keep:
+            again = next((i for i, c in enumerate(shown) if c.code == keep), None)
+            if again is not None:
+                self.tree.selection_set(str(again))
+                self.tree.see(str(again))
+        self.show_details()
+
+    def selected(self) -> catalog.CatalogCard | None:
+        sel = self.tree.selection()
+        return self.shown[int(sel[0])] if sel and int(sel[0]) < len(self.shown) else None
+
+    def show_details(self) -> None:
+        c = self.selected()
+        for b in self.buttons:
+            b.state(["!disabled"] if c else ["disabled"])
+        if not c:
+            self.d_name.set("Select a card" if self.cards else "No card prices yet")
+            self.d_info.set("" if self.cards else "Click \"Update all prices\" to download every Riftbound card "
+                                                  "with its current price.")
+            self.d_price.set("")
+            self.d_facts.set("Tip: click a column heading to sort. Click \"7 days\" for the week's biggest movers "
+                             "(tick \"$1 and up\" to skip penny cards)."
+                             if self.cards else "")
+            self.price_chart.set_data([])
+            self.play_chart.set_data([])
+            return
+        k = name_key(c.name)
+        self.d_name.set(c.name)
+        self.d_info.set(" · ".join(filter(None, [c.set_name, c.code, c.rarity, c.card_type])))
+        self.d_price.set(_money(c.main_price) + ("  foil" if c.is_foil_only else "") if c.main_price else "No price")
+        facts = []
+        if c.price and c.foil_price:
+            facts.append(f"Foil {_money(c.foil_price)}")
+        for label, days in (("1 day", 1), ("7 days", 7)):
+            if c.change_pct(days) is not None:
+                delta = c.change_1d if days == 1 else c.change_7d
+                facts.append(f"{label}: no change" if abs(delta) < 0.005 else
+                             f"{label}: {_pct(c.change_pct(days))} ({'+' if delta >= 0 else '−'}{_money(abs(delta))})")
+        if c.cm_price:
+            facts.append(f"Cardmarket €{c.cm_price:,.2f}")
+        facts.append(f"Played in {self.play[k]:.0%} of decklists" if k in self.play else "Not in your decklists")
+        if self.owned.get(k):
+            facts.append(f"You own {self.owned[k]}")
+        self.d_facts.set("\n".join(facts))
+
+        history = catalog.history(self.db, c)
+        self.price_chart.set_data(history, "Price history builds up as prices are updated each day. "
+                                           "The 7-day change above works already.")
+        series = market.play_rate_series(self.meta, c.name)
+        while series and series[0][1] is None:
+            series.pop(0)
+        self.play_chart.set_data(series, "No dated decklists with this card yet.")
+
+    # --- actions ---------------------------------------------------------------
+
+    def _card(self, c: catalog.CatalogCard, wishlist: bool) -> Card:
+        return Card(name=c.name, game="Riftbound", set_name=c.set_name, number=c.code, rarity=c.rarity,
+                    value=c.main_price, wishlist=wishlist,
+                    notes="Foil" if c.is_foil_only else "")
+
+    def add_to_collection(self) -> None:
+        c = self.selected()
+        if c:
+            from .gui import CardDialog
+            dialog = CardDialog(self.winfo_toplevel(), "Add to collection", ["Riftbound"], self._card(c, False))
+            if dialog.result:
+                self.db.add(dialog.result)
+                self.on_data_changed()
+                self.refresh()
+
+    def add_to_wishlist(self) -> None:
+        c = self.selected()
+        if not c:
+            return
+        if any(w.number == c.code for w in self.db.search(wishlist=True)):
+            messagebox.showinfo("Wishlist", f"{c.name} ({c.code}) is already on your wishlist.")
+            return
+        self.db.add(self._card(c, True))
+        self.on_data_changed()
+        messagebox.showinfo("Wishlist", f"Added {c.name} ({c.set_name}) to your wishlist.")
+
+    def open_ebay(self) -> None:
+        c = self.selected()
+        if c:
+            webbrowser.open(market.ebay_sold_url(c.name.replace(" - ", " "), "Riftbound", self.ebay_site()))
+
+    def open_image(self) -> None:
+        c = self.selected()
+        if c and c.image:
+            webbrowser.open(c.image)

@@ -13,7 +13,9 @@ lookups need the internet.
 
 ![Meta tracker tab](docs/screenshot-meta.png)
 
-![Market tab](docs/screenshot-market.png)
+![Market tab: every card's price](docs/screenshot-prices.png)
+
+![Market tab: signals](docs/screenshot-market.png)
 
 ![Future insight tab](docs/screenshot-insight.png)
 
@@ -227,9 +229,32 @@ what the service sent back, which is what's needed to fix it.
   `wishlist` (`yes` for wishlist cards), `image_path`. The
   easiest way to get the format right is to export first and copy it.
 
+## Market tab: every card's price
+
+The Market tab opens on **All cards**: every Riftbound printing (about
+1,400, including showcase and promo versions) with:
+
+- its current **TCGplayer price** (an "F" means the card only comes in foil);
+- the **1-day and 7-day price change**, available from the very first
+  download;
+- the **Cardmarket** (EUR) price;
+- its **play rate** in your decklists and how many copies you **own**.
+
+Search by name or card code, filter by set and rarity, and click any column
+heading to sort. For example, click **7 days** for the week's biggest movers
+(tick **$1 and up** to skip penny cards). Select a card to see its price
+history chart and weekly play rate, add it to your collection or wishlist,
+check eBay's sold listings, or open the card image.
+
+The price list downloads automatically the first time you open the app and
+each day after that (while "Update daily when the app opens" is ticked), or
+whenever you click **Update all prices**. Each day's prices are saved, so the
+history charts grow over time.
+
 ## Market tab: when to sell or buy
 
-The Market tab brings everything together. For every card you own (and
+The other Market views (**My cards**, **Buy opportunities**, **Everything**)
+bring everything together. For every card you own (and
 every meta card you don't), it shows:
 
 - **Profit:** current value minus what you paid. Enter "Paid (each)" in the

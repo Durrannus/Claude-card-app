@@ -2,6 +2,7 @@
 
 import tkinter as tk
 from datetime import date
+from tkinter import font as tkfont
 
 from . import theme
 
@@ -51,7 +52,13 @@ class LineChart(tk.Canvas):
         if self.zero_based:
             lo = 0.0
 
-        left, right = self.PAD_LEFT, w - self.PAD_RIGHT
+        # Make room for the widest axis label and the end-point label.
+        axis_font = tkfont.Font(font=theme.font(8))
+        end_font = tkfont.Font(font=theme.font(9, "bold"))
+        widest_axis = max(axis_font.measure(self.fmt(lo + (hi - lo) * f)) for f in (0, 0.5, 1))
+        last_value = next(v for _, v in reversed(self.points) if v is not None)
+        left = max(self.PAD_LEFT, widest_axis + 14)
+        right = w - max(self.PAD_RIGHT, end_font.measure(self.fmt(last_value)) + 16)
         top, bottom = self.PAD_TOP, h - self.PAD_BOTTOM
         days = [date.fromisoformat(d).toordinal() for d, _ in self.points]
         d0, d1 = min(days), max(days)
