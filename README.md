@@ -53,6 +53,9 @@ Python 3.10 or newer.
 ## Running it
 
 - **Windows:** double-click `start_card_logger.pyw`.
+- **Download:** get the latest version as a ZIP from
+  <https://github.com/Durrannus/Claude-card-app/archive/refs/heads/main.zip>
+  and unzip it. After that, the app's update button keeps it current.
 - **Any system:** open a terminal in this folder and run
 
   ```
@@ -203,6 +206,18 @@ Decklists can be in any of the common text formats: headings such as
 
 The meta sites (riftDecks, riftbound.gg, Piltover Archive) don't offer a
 public data feed, which is why those decklists are added by hand.
+
+### Getting the latest version
+
+The version number is shown in the top-right corner. When you open the app,
+it checks GitHub for a newer version, and the button next to the version
+turns gold ("Update available") if there is one. Click it to download and
+install the update, then restart when asked. You can also click **Check for
+updates** at any time.
+
+Updating replaces only the program files. Your collection, prices,
+decklists, photos and settings are kept, because they're stored separately
+in the `.card_logger` folder in your home folder.
 
 ### Checking the live connections
 

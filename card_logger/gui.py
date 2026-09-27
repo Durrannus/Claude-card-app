@@ -686,7 +686,9 @@ def build_window(root: tk.Tk, db: CardDatabase):
     root.minsize(min(1000, width), min(600, height))
     theme.apply_theme(root)
 
-    theme.header(root, "Riftbound collection and market tracker: spot the right time to buy and sell").pack(fill="x")
+    bar = theme.header(root, "Riftbound collection and market tracker: spot the right time to buy and sell")
+    bar.pack(fill="x")
+    add_update_button(root, bar)
     tabs = ttk.Notebook(root)
     tabs.pack(fill="both", expand=True, pady=(8, 12))
     collection = CardLoggerApp(tabs, db)
@@ -716,6 +718,77 @@ def build_window(root: tk.Tk, db: CardDatabase):
     # Each tab shows data the others change, so refresh the one being opened.
     tabs.bind("<<NotebookTabChanged>>", lambda _: tabs.nametowidget(tabs.select()).refresh())
     return tabs, collection, meta, market_tab, insight_tab
+
+
+def add_update_button(root: tk.Tk, bar: ttk.Frame) -> ttk.Button:
+    """A button in the title bar that checks GitHub for a newer version and
+    installs it. It checks quietly at startup and turns gold if one exists."""
+    from . import updater
+
+    state = {"latest": None, "busy": False}
+    button = ttk.Button(bar, text="⟳  Check for updates")
+    button.pack(side="right")
+    ttk.Label(bar, text=f"Version {updater.current_version()}", style="Subtitle.TLabel").pack(
+        side="right", padx=(0, 12))
+
+    def show_available(latest: str) -> None:
+        state["latest"] = latest
+        if updater.is_newer(latest, updater.current_version()):
+            button.configure(text=f"⬆  Update available ({latest})", style="Accent.TButton")
+
+    def install() -> None:
+        def done(version, error):
+            state["busy"] = False
+            button.state(["!disabled"])
+            if error:
+                button.configure(text="⟳  Check for updates", style="TButton")
+                messagebox.showerror("Update", str(error) if isinstance(error, updater.UpdateError)
+                                     else f"The update didn't finish: {error}")
+                return
+            button.configure(text="✓  Updated, restart to finish", style="TButton")
+            if messagebox.askyesno("Update", f"Updated to version {version}.\n\nRestart the app now to use it?"):
+                subprocess.Popen(updater.restart_command(), cwd=str(updater.APP_DIR))
+                root.destroy()
+
+        state["busy"] = True
+        button.state(["disabled"])
+        run_in_background(root, lambda report: updater.install(report=report), done,
+                          on_progress=lambda msg: button.configure(text=msg))
+
+    def click() -> None:
+        if state["busy"]:
+            return
+
+        def checked(latest, error):
+            state["busy"] = False
+            button.state(["!disabled"])
+            if error:
+                button.configure(text="⟳  Check for updates")
+                messagebox.showerror("Update", str(error) if isinstance(error, updater.UpdateError)
+                                     else f"Couldn't check for updates: {error}")
+                return
+            show_available(latest)
+            current = updater.current_version()
+            if not updater.is_newer(latest, current):
+                button.configure(text="⟳  Check for updates")
+                messagebox.showinfo("Update", f"You have the latest version ({current}).")
+            elif messagebox.askyesno(
+                    "Update", f"Version {latest} is available (you have {current}).\n\n"
+                              "Download and install it now? Your collection, prices, decklists and settings "
+                              "are kept."):
+                install()
+
+        state["busy"] = True
+        button.state(["disabled"])
+        button.configure(text="Checking…")
+        run_in_background(root, lambda report: updater.latest_version(), checked)
+
+    button.configure(command=click)
+    # Quiet check at startup; problems (e.g. offline) are ignored until clicked.
+    root.after(3000, lambda: run_in_background(
+        root, lambda report: updater.latest_version(),
+        lambda latest, error: None if error else show_available(latest)))
+    return button
 
 
 def main(db_path=None) -> None:
