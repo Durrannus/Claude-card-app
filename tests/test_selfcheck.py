@@ -26,6 +26,11 @@ def fake_services(url):
 
 @mock.patch.object(riftboundgg, "PAUSE", 0)
 class SelfCheckTest(unittest.TestCase):
+    def setUp(self):
+        patcher = mock.patch.object(selfcheck, "_topdeck_key", lambda: "")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def run_check(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "report.txt"
@@ -40,6 +45,7 @@ class SelfCheckTest(unittest.TestCase):
             ok, out, report = self.run_check()
         self.assertTrue(ok, out)
         self.assertEqual(out.count("[PASS]"), 5)
+        self.assertEqual(out.count("[SKIP]"), 1)  # no TopDeck.gg key
         self.assertIn("newest event 'Vendetta Case Tournament' (37 players)", out)
         self.assertIn("legend 'Sett - The Boss'", out)
         self.assertIn("https://tcgcsv.com/tcgplayer/89/groups", report)  # response samples saved

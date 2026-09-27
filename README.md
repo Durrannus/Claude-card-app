@@ -121,10 +121,37 @@ For Riftbound:
 
 The **Meta tracker** tab shows what the competitive decks are playing.
 
-### Automatic import from riftbound.gg
+### Automatic import
 
-Click **Import decklists** to download Riftbound decklists from
-[riftbound.gg](https://riftbound.gg). It can import two kinds:
+Click **Import decklists** and choose the sources.
+
+#### TopDeck.gg tournaments (recommended for recent results)
+
+[TopDeck.gg](https://topdeck.gg) runs many Riftbound tournaments, from store
+events to large qualifiers, and has a free official API. The import brings
+in recent tournaments with each player's **placing, win/loss record, legend
+and decklist**. The records are what power the "Wins more" sign in Future
+insight.
+
+It needs a free API key:
+
+1. In the Import decklists window, click **Get a free key ↗**. TopDeck.gg's
+   developer page opens.
+2. Sign in and create a key.
+3. Paste it into **API key**. It's saved only on your computer.
+
+**Minimum players** skips small events; raise it to focus on bigger,
+more competitive ones. Decklists appear once an event has finished, and only
+for players whose list the organiser made public. TopDeck.gg asks apps to
+credit it, so the Meta tracker shows "Tournament data provided by
+TopDeck.gg".
+
+The official Riftbound event system (the Event Locator) keeps decklists
+private to organisers, so they can't be imported from there.
+
+#### riftbound.gg
+
+[riftbound.gg](https://riftbound.gg) provides two kinds:
 
 - **Tournament decks**, with the event, its size and the player's placing.
   They're dated by when the event happened. Decks from events older than
@@ -259,8 +286,8 @@ Signals are only as good as the data behind them:
   app opens" ticked). It refreshes your collection and wishlist values and
   saves today's price for every Riftbound card, so cards you don't own get a
   price history too. Price charts fill in as the days go by.
-- **Decklists:** turn on the daily riftbound.gg import in the Meta tracker
-  tab, and add other tournament results by hand, with their dates. Trends compare recent decklists with older ones, so a
+- **Decklists:** add a TopDeck.gg key and turn on the daily import in the
+  Meta tracker tab. Add other tournament results by hand, with their dates. Trends compare recent decklists with older ones, so a
   steady flow of dated lists is what makes early detection work.
 
 ## Future insight: cards that could be next
@@ -292,10 +319,9 @@ comparing the second half of the period with the first.
 prices in one click. **Add to wishlist** and **eBay ↗** help you act on a
 card.
 
-The top-finishers sign needs placings, which come with riftbound.gg
-tournament decks and with decklists you add by hand when you enter a
-placement. The win-rate sign needs match records, which none of the current
-sources provide, so it stays quiet for now.
+The top-finishers sign needs placings, and the win-rate sign needs match
+records. Both come with TopDeck.gg tournaments. Placings also come with
+riftbound.gg tournament decks and with decklists you add by hand.
 
 Signs that compare with earlier weeks (climbing, spreading, rising legends,
 new arrivals) need a few weeks of history. After your first import the tab

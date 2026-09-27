@@ -6,7 +6,9 @@ from datetime import date
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
-from . import riftboundgg, theme
+import webbrowser
+
+from . import riftboundgg, theme, topdeck
 from .db import Card, CardDatabase
 from .meta import (
     BATTLEFIELDS, CHAMPION, LEGEND, MAIN, RUNES, SECTIONS, Deck, MetaTracker, card_key, parse_decklist,
@@ -158,7 +160,7 @@ class DeckDialog(tk.Toplevel):
 
 
 class ImportDialog(tk.Toplevel):
-    """Settings for importing decklists from riftbound.gg."""
+    """Choose where to import decklists from."""
 
     def __init__(self, parent, db: CardDatabase):
         super().__init__(parent)
@@ -170,35 +172,54 @@ class ImportDialog(tk.Toplevel):
 
         form = ttk.Frame(self, padding=20)
         form.pack(fill="both", expand=True)
+        form.columnconfigure(1, weight=1)
         ttk.Label(form, text="Import decklists", style="Section.TLabel", font=theme.font(14, "bold")).grid(
-            row=0, column=0, columnspan=2, sticky="w")
-        ttk.Label(form, style="Muted.TLabel", wraplength=440, justify="left", text=(
-            "Downloads Riftbound decklists from riftbound.gg. Decklists you've already imported are "
-            "skipped, and copies of the same list count once. Takes a minute or two, because the site "
-            "asks apps not to rush it."
-        )).grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 12))
+            row=0, column=0, columnspan=3, sticky="w")
+        ttk.Label(form, style="Muted.TLabel", wraplength=470, justify="left", text=(
+            "Decklists you've already imported are skipped, so importing again only adds new ones."
+        )).grid(row=1, column=0, columnspan=3, sticky="w", pady=(4, 10))
 
         self.days = tk.StringVar(value=db.get_setting("import_days", "30"))
-        self.tournaments = tk.BooleanVar(value=db.get_setting("import_tournaments", "1") == "1")
-        self.community = tk.BooleanVar(value=db.get_setting("import_community", "1") == "1")
-        self.auto = tk.BooleanVar(value=db.get_setting("auto_import") == "1")
         ttk.Label(form, text="Look back (days)", style="Muted.TLabel").grid(row=2, column=0, sticky="w", pady=4)
         ttk.Spinbox(form, textvariable=self.days, from_=1, to=90, width=8).grid(row=2, column=1, sticky="w")
-        for row, (var, text) in enumerate([
-            (self.tournaments, "Tournament decks: with the event, its size and the player's placing"),
-            (self.community, "Community decks: lists players have published recently. The freshest sign of "
-                             "what people are building"),
-            (self.auto, "Import new decklists automatically each day"),
-        ], start=3):
-            ttk.Checkbutton(form, text=text, variable=var).grid(row=row, column=0, columnspan=2, sticky="w",
-                                                               pady=(6, 0))
-        ttk.Label(form, style="Muted.TLabel", wraplength=440, justify="left", font=theme.font(9), text=(
-            "riftbound.gg only serves about the newest 800 community decks (a few days' worth) at a time, "
-            "so importing daily builds up a longer history."
-        )).grid(row=6, column=0, columnspan=2, sticky="w", pady=(8, 0))
+
+        # TopDeck.gg: recent tournaments with placings, records and decklists.
+        self.topdeck = tk.BooleanVar(value=db.get_setting("import_topdeck", "1") == "1")
+        self.key = tk.StringVar(value=db.get_setting("topdeck_key"))
+        self.min_players = tk.StringVar(value=db.get_setting("import_min_players", "8"))
+        ttk.Checkbutton(form, text="Tournaments from TopDeck.gg: placings, win/loss records and decklists",
+                        variable=self.topdeck).grid(row=3, column=0, columnspan=3, sticky="w", pady=(12, 2))
+        ttk.Label(form, text="API key", style="Muted.TLabel").grid(row=4, column=0, sticky="w", padx=(22, 8))
+        ttk.Entry(form, textvariable=self.key, width=34, show="•").grid(row=4, column=1, sticky="ew")
+        ttk.Button(form, text="Get a free key ↗", style="Small.TButton",
+                   command=lambda: webbrowser.open(topdeck.KEY_PAGE)).grid(row=4, column=2, padx=(8, 0))
+        ttk.Label(form, text="Minimum players", style="Muted.TLabel").grid(row=5, column=0, sticky="w",
+                                                                         padx=(22, 8), pady=4)
+        ttk.Spinbox(form, textvariable=self.min_players, from_=2, to=4096, width=8).grid(row=5, column=1, sticky="w")
+        ttk.Label(form, style="Muted.TLabel", font=theme.font(9), wraplength=450, justify="left", text=(
+            "The key is free: sign in at TopDeck.gg's developer page and create one. It's saved only on this "
+            "computer. Data provided by TopDeck.gg."
+        )).grid(row=6, column=0, columnspan=3, sticky="w", padx=(22, 0))
+
+        # riftbound.gg: community decks, plus its (older) tournament decks.
+        self.community = tk.BooleanVar(value=db.get_setting("import_community", "1") == "1")
+        self.tournaments = tk.BooleanVar(value=db.get_setting("import_tournaments", "1") == "1")
+        ttk.Checkbutton(form, text="Community decks from riftbound.gg: what players are building right now",
+                        variable=self.community).grid(row=7, column=0, columnspan=3, sticky="w", pady=(12, 2))
+        ttk.Checkbutton(form, text="Tournament decks from riftbound.gg", variable=self.tournaments).grid(
+            row=8, column=0, columnspan=3, sticky="w")
+        ttk.Label(form, style="Muted.TLabel", font=theme.font(9), wraplength=450, justify="left", text=(
+            "riftbound.gg keeps only its newest few days of community decks and its tournament uploads lag, "
+            "so importing daily builds up a longer history. It asks apps not to rush it, so this part takes "
+            "a minute or two."
+        )).grid(row=9, column=0, columnspan=3, sticky="w", padx=(22, 0))
+
+        self.auto = tk.BooleanVar(value=db.get_setting("auto_import") == "1")
+        ttk.Checkbutton(form, text="Import new decklists automatically each day", variable=self.auto).grid(
+            row=10, column=0, columnspan=3, sticky="w", pady=(14, 0))
 
         buttons = ttk.Frame(form)
-        buttons.grid(row=7, column=0, columnspan=2, sticky="e", pady=(16, 0))
+        buttons.grid(row=11, column=0, columnspan=3, sticky="e", pady=(16, 0))
         ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side="right")
         ttk.Button(buttons, text="Import", style="Accent.TButton", command=self._ok).pack(side="right", padx=(0, 8))
         self.bind("<Escape>", lambda e: self.destroy())
@@ -208,19 +229,26 @@ class ImportDialog(tk.Toplevel):
 
     def _ok(self) -> None:
         try:
-            days = int(self.days.get())
-            if days < 1:
+            days, players = int(self.days.get()), int(self.min_players.get())
+            if days < 1 or players < 1:
                 raise ValueError
         except ValueError:
-            messagebox.showerror("Import decklists", "Enter a whole number of days above zero.", parent=self)
+            messagebox.showerror("Import decklists", "Enter whole numbers above zero.", parent=self)
             return
-        if not (self.tournaments.get() or self.community.get()):
-            messagebox.showerror("Import decklists", "Tick tournament decks, community decks or both.", parent=self)
+        if not (self.topdeck.get() or self.community.get() or self.tournaments.get()):
+            messagebox.showerror("Import decklists", "Tick at least one source.", parent=self)
             return
-        self.db.set_setting("import_days", str(days))
-        self.db.set_setting("import_tournaments", "1" if self.tournaments.get() else "0")
-        self.db.set_setting("import_community", "1" if self.community.get() else "0")
-        self.db.set_setting("auto_import", "1" if self.auto.get() else "0")
+        if self.topdeck.get() and not self.key.get().strip():
+            messagebox.showerror("Import decklists", "TopDeck.gg needs an API key. Click \"Get a free key\", "
+                                 "or untick TopDeck.gg.", parent=self)
+            return
+        for key, value in [("import_days", str(days)), ("import_min_players", str(players)),
+                           ("import_topdeck", "1" if self.topdeck.get() else "0"),
+                           ("topdeck_key", self.key.get().strip()),
+                           ("import_community", "1" if self.community.get() else "0"),
+                           ("import_tournaments", "1" if self.tournaments.get() else "0"),
+                           ("auto_import", "1" if self.auto.get() else "0")]:
+            self.db.set_setting(key, value)
         self.accepted = True
         self.destroy()
 
@@ -247,9 +275,14 @@ class MetaTrackerTab(ttk.Frame):
 
         self._build_filters()
         self.status = tk.StringVar()
-        ttk.Label(self, textvariable=self.status, style="Status.TLabel", anchor="w").pack(
-            side="bottom", fill="x", pady=(10, 0)
-        )
+        status_bar = ttk.Frame(self, style="Header.TFrame")
+        status_bar.pack(side="bottom", fill="x", pady=(10, 0))
+        ttk.Label(status_bar, textvariable=self.status, style="Status.TLabel", anchor="w").pack(
+            side="left", fill="x", expand=True)
+        # TopDeck.gg's terms ask for a visible credit with a link.
+        self.attribution = ttk.Label(status_bar, text=topdeck.ATTRIBUTION + " ↗", style="Status.TLabel",
+                                     foreground=theme.GOLD, cursor="hand2")
+        self.attribution.bind("<Button-1>", lambda _: webbrowser.open("https://topdeck.gg"))
         self.importing = False
         self._build_body()
         self.refresh()
@@ -389,6 +422,10 @@ class MetaTrackerTab(ttk.Frame):
         total = len(self.meta.decks())
         if not self.importing:
             self.status.set(shown if len(decks) == total else f"{shown} (filtered from {total})")
+        if self.meta.known_sources(f"{topdeck.SOURCE}:"):
+            self.attribution.pack(side="right")
+        else:
+            self.attribution.pack_forget()
         self.tiles["decks"].value.set(f"{len(decks):,}")
         self.tiles["events"].value.set(f"{len(events):,}")
         top_legend = shares[0] if shares and not legend else None
@@ -415,50 +452,68 @@ class MetaTrackerTab(ttk.Frame):
             self.import_tournaments()
 
     def import_tournaments(self, silent: bool = False) -> None:
-        """Download new decklists from riftbound.gg in the background."""
+        """Download new decklists from the chosen sources in the background."""
         from .gui import run_in_background
 
         if self.importing:
             return
-        days = int(self.db.get_setting("import_days", "30"))
-        tournaments = self.db.get_setting("import_tournaments", "1") == "1"
-        community = self.db.get_setting("import_community", "1") == "1"
-        known = self.meta.known_sources(f"{riftboundgg.SOURCE}:")
+        get = self.db.get_setting
+        days = int(get("import_days", "30"))
+        use_topdeck = get("import_topdeck", "1") == "1" and bool(get("topdeck_key"))
+        key, min_players = get("topdeck_key"), int(get("import_min_players", "8"))
+        tournaments = get("import_tournaments", "1") == "1"
+        community = get("import_community", "1") == "1"
+        known = self.meta.known_sources("")
 
         def work(report):
-            return riftboundgg.fetch(days, known, tournaments=tournaments, community=community, report=report)
+            results, errors = {}, []
+            if use_topdeck:
+                try:
+                    results["topdeck"] = topdeck.fetch(key, days, min_players, known, report=report)
+                except topdeck.TopDeckError as e:
+                    errors.append(str(e))
+            if tournaments or community:
+                try:
+                    results["riftboundgg"] = riftboundgg.fetch(days, known, tournaments=tournaments,
+                                                               community=community, report=report)
+                except riftboundgg.FetchError as e:
+                    errors.append(str(e))
+            return results, errors
 
         def done(result, error):
             self.importing = False
             self.import_button.state(["!disabled"])
             if error:
                 self.refresh()
-                message = str(error) if isinstance(error, riftboundgg.FetchError) else f"Import stopped: {error}"
-                if silent:
-                    self.status.set(f"Automatic decklist import failed: {message}")
-                else:
-                    messagebox.showerror("Import decklists", message)
+                message = f"Import stopped: {error}"
+                self.status.set(message) if silent else messagebox.showerror("Import decklists", message)
                 return
-            added = riftboundgg.save(self.meta, result)
+            results, errors = result
+            lines, notes = [], []
+            if "topdeck" in results:
+                r = results["topdeck"]
+                added = topdeck.save(self.meta, r)
+                lines.append(f"TopDeck.gg: {added} decklist{'s' if added != 1 else ''} from "
+                             f"{r.tournaments} tournament{'s' if r.tournaments != 1 else ''}")
+                if r.without_lists:
+                    notes.append(f"{r.without_lists} TopDeck.gg players had no public decklist.")
+            if "riftboundgg" in results:
+                r = results["riftboundgg"]
+                riftboundgg.save(self.meta, r)
+                lines.append(f"riftbound.gg: {r.tournament_decks} tournament and {r.community_decks} community "
+                             f"deck{'s' if r.community_decks != 1 else ''}")
+                if r.skipped_undated:
+                    notes.append(f"{r.skipped_undated} riftbound.gg tournament decks were skipped because their "
+                                 f"event is older than {days} days (or undated), so they'd distort recent trends.")
             if silent:
                 self.db.set_setting("last_auto_import", date.today().isoformat())
             self.refresh()
-            parts = []
-            if tournaments:
-                parts.append(f"{result.tournament_decks} tournament deck{'s' if result.tournament_decks != 1 else ''}")
-            if community:
-                parts.append(f"{result.community_decks} community deck{'s' if result.community_decks != 1 else ''}")
-            summary = f"Imported {' and '.join(parts)} from riftbound.gg."
+            summary = "Imported " + "; ".join(lines) + "." if lines else "Nothing was imported."
             if silent:
-                self.status.set("Automatic import: " + summary)
+                self.status.set("Automatic import: " + summary + (" Problem: " + errors[0] if errors else ""))
                 return
-            notes = []
-            if result.skipped_undated:
-                notes.append(f"{result.skipped_undated} tournament decks were skipped because their event is older "
-                             f"than {days} days (or its date isn't listed), so they'd distort recent trends.")
-            if result.unknown_codes:
-                notes.append(f"{result.unknown_codes} card codes weren't recognised and were left out.")
-            messagebox.showinfo("Import decklists", summary + ("\n\n" + "\n\n".join(notes) if notes else ""))
+            text = summary + "".join(f"\n\n{n}" for n in notes) + "".join(f"\n\nProblem: {e}" for e in errors)
+            (messagebox.showwarning if errors else messagebox.showinfo)("Import decklists", text)
 
         self.importing = True
         self.import_button.state(["disabled"])

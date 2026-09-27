@@ -13,10 +13,16 @@ from pathlib import Path
 
 from datetime import date
 
-from . import pricing, riftboundgg
-from .db import Card, DEFAULT_DB_PATH
+import os
+
+from . import pricing, riftboundgg, topdeck
+from .db import Card, CardDatabase, DEFAULT_DB_PATH
 
 SAMPLE_CHARS = 1500
+
+
+class Skipped(Exception):
+    """The check can't run yet (e.g. no API key); not a failure."""
 
 
 class Recorder:
@@ -73,6 +79,34 @@ def check_riftboundgg(rec: Recorder) -> str:
             f"{unknown} unknown card codes; e.g. legend '{deck.legend}', {sum(c.quantity for c in deck.cards)} cards")
 
 
+def _topdeck_key() -> str:
+    if os.environ.get("TOPDECK_API_KEY"):
+        return os.environ["TOPDECK_API_KEY"]
+    if Path(DEFAULT_DB_PATH).exists():
+        db = CardDatabase(DEFAULT_DB_PATH)
+        try:
+            return db.get_setting("topdeck_key")
+        finally:
+            db.close()
+    return ""
+
+
+def check_topdeck(rec: Recorder) -> str:
+    key = _topdeck_key()
+    if not key:
+        raise Skipped(f"No API key yet. Add a free key in Import decklists ({topdeck.KEY_PAGE}).")
+
+    def post(body, api_key):
+        data = topdeck._post(body, api_key)
+        rec.samples.append((topdeck.API + " " + json.dumps(body), json.dumps(data, ensure_ascii=False)[:SAMPLE_CHARS]))
+        return data
+    result = topdeck.fetch(key, 14, 2, set(), post=post)
+    deck = result.decks[0] if result.decks else None
+    return (f"{result.tournaments} Riftbound tournaments in the last 14 days, {len(result.decks)} public decklists"
+            + (f"; e.g. {deck.player} placed {deck.placement} at '{deck.event}' with '{deck.legend}', record "
+               f"{deck.wins}-{deck.losses}" if deck else ""))
+
+
 def check_other(rec: Recorder, game: str, name: str) -> str:
     result = pricing.lookup_price(Card(name=name, game=game), fetch=rec.fetch)
     return f"'{name}': ${result.price:,.2f} ({result.matched})"
@@ -81,6 +115,7 @@ def check_other(rec: Recorder, game: str, name: str) -> str:
 CHECKS = [
     ("Riftbound prices (TCGCSV)", check_riftbound_prices),
     ("Riftbound decklists (riftbound.gg)", check_riftboundgg),
+    ("Riftbound tournaments (TopDeck.gg)", check_topdeck),
     ("Magic prices (Scryfall)", lambda rec: check_other(rec, "Magic", "Lightning Bolt")),
     ("Pokémon prices (Pokémon TCG API)", lambda rec: check_other(rec, "Pokémon", "Pikachu")),
     ("Yu-Gi-Oh! prices (YGOPRODeck)", lambda rec: check_other(rec, "Yu-Gi-Oh!", "Dark Magician")),
@@ -97,6 +132,8 @@ def run(report_path: Path | None = None) -> bool:
         try:
             detail = check(rec)
             status = "PASS"
+        except Skipped as e:
+            status, detail = "SKIP", str(e)
         except Exception as e:  # report every failure, keep checking the rest
             all_ok = False
             status, detail = "FAIL", f"{type(e).__name__}: {e}"
