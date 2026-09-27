@@ -114,7 +114,7 @@ class AllCardsView(ttk.Frame):
         table.pack(side="top", fill="both", expand=True)
         # The card number, version and price must never be cut short.
         self.tree = theme.make_table(table, COLUMNS, on_sort=self.sort_by, flexible=("name", "version"),
-                                     fit_text={"number": "OGN-303-STAR", "version": "Signature",
+                                     fit_text={"name": "Jinx - Demolitionist", "number": "OGN-303-STAR", "version": "Signature",
                                                "price": "$1,266.68 F"},
                                      selectmode="browse")
         self.tree.tag_configure("up", foreground=theme.GOOD)

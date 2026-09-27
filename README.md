@@ -249,22 +249,36 @@ what the service sent back, which is what's needed to fix it.
 The Market tab opens on **All cards**: every Riftbound printing (about
 1,400, including showcase and promo versions) with:
 
+- its **card number** (the **#** column, e.g. OGN-202) and **version**, so
+  printings of the same card are easy to tell apart:
+
+  | Version | Example number | What it is |
+  |---|---|---|
+  | Standard | OGN-202 | the normal printing |
+  | Alt art | OGN-202a | alternate artwork (a letter after the number) |
+  | Overnumbered | OGN-301 | showcase numbered past the set's last card |
+  | Signature | OGN-301-STAR | signed showcase printing |
+  | SP | VEN-SP3 | special printing |
+  | Showcase | | other showcase printings |
+  | Promo | OGN-202-P, OGN-202b | promos and event (Nexus Night) cards |
+  | Token / Oversized | UNL-T02 | tokens and oversized cards |
+
 - its current **TCGplayer price** (an "F" means the card only comes in foil);
 - the **1-day and 7-day price change**, available from the very first
   download;
-- the **Cardmarket** (EUR) price;
+- the **EU price** (Cardmarket, in EUR);
 - its **play rate** in your decklists and how many copies you **own**.
 
 It also shows each card's **meta move**: how its play rate changed over the
 **Compare** period (e.g. the last 7 days of decklists against the 7 before).
-Search by name or card code; filter by set, rarity or meta (rising, falling,
+Search by name or card code; filter by set, rarity, version (e.g. only Signatures) or meta (rising, falling,
 played or not played); and click any column heading to sort. For example, click **7 days** for the week's biggest movers
-(tick **$1 and up** to skip penny cards). Select a card to see its price
+(tick **$1 and up** to skip penny cards). Select a card to see its set, rarity and type, its price
 history chart and weekly play rate, add it to your collection or wishlist,
 check eBay's sold listings, or open the card image.
 
 The price list downloads automatically the first time you open the app and
-each day after that (while "Update daily when the app opens" is ticked), or
+each day after that (while **Auto-update daily** is ticked), or
 whenever you click **Update all prices**. Each day's prices are saved, so the
 history charts grow over time.
 
@@ -326,8 +340,8 @@ other prices (TCGplayer prices are in US dollars).
 
 Signals are only as good as the data behind them:
 
-- **Prices:** click **Update all prices** (or leave "Update daily when the
-  app opens" ticked). It refreshes your collection and wishlist values and
+- **Prices:** click **Update all prices** (or leave **Auto-update daily**
+  ticked). It refreshes your collection and wishlist values and
   saves today's price for every Riftbound card, so cards you don't own get a
   price history too. Price charts fill in as the days go by.
 - **Decklists:** add a TopDeck.gg key and turn on the daily import in the
