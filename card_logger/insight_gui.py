@@ -4,7 +4,7 @@ import tkinter as tk
 import webbrowser
 from tkinter import messagebox, ttk
 
-from . import insight, market, theme
+from . import currency, insight, market, theme
 from .db import Card, CardDatabase, name_key
 from .meta import MetaTracker
 
@@ -209,4 +209,4 @@ class InsightTab(ttk.Frame):
 
     def open_ebay(self) -> None:
         for c in self._selected()[:1]:
-            webbrowser.open(market.ebay_sold_url(c.name, "Riftbound", self.db.get_setting("ebay_site", "ebay.com")))
+            webbrowser.open(market.ebay_sold_url(c.name, "Riftbound", self.db.get_setting("ebay_site", currency.ebay_site())))

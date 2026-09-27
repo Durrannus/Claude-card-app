@@ -21,6 +21,8 @@ def fake_services(url):
         return {"data": POKEMON_CARDS}
     if "ygoprodeck" in url:
         return {"data": YUGIOH_CARDS}
+    if "frankfurter" in url:
+        return {"date": "2026-09-25", "rates": {"GBP": 0.75458, "EUR": 0.87696}}
     raise AssertionError(url)
 
 
@@ -44,10 +46,11 @@ class SelfCheckTest(unittest.TestCase):
                 mock.patch.object(riftboundgg, "http_json", fake_services):
             ok, out, report = self.run_check()
         self.assertTrue(ok, out)
-        self.assertEqual(out.count("[PASS]"), 5)
+        self.assertEqual(out.count("[PASS]"), 6)
         self.assertEqual(out.count("[SKIP]"), 1)  # no TopDeck.gg key
         self.assertIn("newest event 'Vendetta Case Tournament' (37 players)", out)
         self.assertIn("legend 'Sett - The Boss'", out)
+        self.assertIn("$1 = £0.7546", out)
         self.assertIn("https://tcgcsv.com/tcgplayer/89/groups", report)  # response samples saved
 
     def test_failures_reported(self):
@@ -56,7 +59,7 @@ class SelfCheckTest(unittest.TestCase):
         with mock.patch.object(pricing, "_get_json", offline), mock.patch.object(riftboundgg, "http_json", offline):
             ok, out, report = self.run_check()
         self.assertFalse(ok)
-        self.assertEqual(out.count("[FAIL]"), 5)
+        self.assertEqual(out.count("[FAIL]"), 6)
         self.assertIn("Traceback", report)
 
 

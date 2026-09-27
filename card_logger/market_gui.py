@@ -5,7 +5,7 @@ import webbrowser
 from datetime import date
 from tkinter import messagebox, ttk
 
-from . import catalog, market, pricing, riftboundgg, theme
+from . import catalog, currency, market, pricing, riftboundgg, theme
 from .catalog_gui import AllCardsView
 from .charts import LineChart
 from .db import CardDatabase
@@ -45,8 +45,8 @@ COLUMNS = [
 ]
 
 
-def _money(v: float) -> str:
-    return f"${v:,.2f}"
+def _money(usd: float) -> str:
+    return currency.fmt(usd)
 
 
 class SoldPriceDialog(tk.Toplevel):
@@ -65,8 +65,8 @@ class SoldPriceDialog(tk.Toplevel):
         ttk.Label(form, text=name, style="Section.TLabel", font=theme.font(14, "bold")).grid(
             row=0, column=0, columnspan=3, sticky="w")
         ttk.Label(form, style="Muted.TLabel", wraplength=theme.px(380), justify="left", text=(
-            "Add each sold price you see, one at a time: the price one copy sold for, in the same currency "
-            "as your other prices.")).grid(row=1, column=0, columnspan=3, sticky="w", pady=(4, 12))
+            "Add each sold price you see, one at a time: the price one copy sold for, in "
+            f"{currency.label()} (the currency chosen at the top of the window).")).grid(row=1, column=0, columnspan=3, sticky="w", pady=(4, 12))
 
         self.price = tk.StringVar()
         self.day = tk.StringVar(value=date.today().isoformat())
@@ -105,13 +105,13 @@ class SoldPriceDialog(tk.Toplevel):
         self._rows = self.db.sold_prices(self.name)
         self.listbox.delete(0, "end")
         for r in self._rows:
-            self.listbox.insert("end", f"{r['day']}    {_money(r['price'])}    {r['note']}")
+            self.listbox.insert("end", f"{r['day']}    {currency.fmt_local(r['price'])}    {r['note']}")
         if not self._rows:
             self.listbox.insert("end", "Nothing logged yet.")
 
     def _add(self) -> None:
         try:
-            price = float(self.price.get().replace("$", "").replace("£", "").replace("€", "").replace(",", ""))
+            price = currency.parse(self.price.get())
             day = date.fromisoformat(self.day.get().strip()).isoformat()
             self.db.add_sold_price(self.name, price, day, self.note.get())
         except ValueError:
@@ -265,7 +265,7 @@ class MarketTab(ttk.Frame):
         self.ebay_button.pack(side="left")
         self.log_button = ttk.Button(ebay, text="Log sold price", style="Small.TButton", command=self.log_sold)
         self.log_button.pack(side="left", padx=(6, 6))
-        self.site_var = tk.StringVar(value=self.db.get_setting("ebay_site", "ebay.com"))
+        self.site_var = tk.StringVar(value=self.db.get_setting("ebay_site", currency.ebay_site()))
         site = ttk.Combobox(ebay, textvariable=self.site_var, values=EBAY_SITES, state="readonly", width=11)
         site.pack(side="left")
         site.bind("<<ComboboxSelected>>", lambda _: self.db.set_setting("ebay_site", self.site_var.get()))
@@ -350,7 +350,7 @@ class MarketTab(ttk.Frame):
                 r.name,
                 r.owned or "",
                 _money(r.value) if r.value else "",
-                (_money(sold[0]) + (f" ({sold[1]})" if sold[1] > 1 else "")) if sold else "",
+                (currency.fmt_local(sold[0]) + (f" ({sold[1]})" if sold[1] > 1 else "")) if sold else "",
                 (("+" if profit >= 0 else "−") + _money(abs(profit))) if profit is not None else "",
                 f"{r.price_change.fraction:+.0%} ({r.price_change.days}d)" if r.price_change else "",
                 f"{r.trend.recent_share:.0%}" if r.trend else "",
@@ -373,7 +373,7 @@ class MarketTab(ttk.Frame):
             if not self.busy:
                 updated = self.db.get_setting("catalog_updated")
                 self.status.set(
-                    f"Every Riftbound printing · TCGplayer market prices (USD) via riftbound.gg"
+                    f"Every Riftbound printing · TCGplayer market prices via riftbound.gg in {currency.code()}"
                     + (f", updated {_friendly_day(updated).lower()}" if updated else "")
                     + " · green/red = up/down 5%+ this week · click a heading to sort")
             return
@@ -421,10 +421,10 @@ class MarketTab(ttk.Frame):
             self.d_ebay.set("eBay sold: none logged. Open eBay's sold listings and log a few prices.")
         else:
             avg, count, newest = sold
-            text = (f"eBay sold: {_money(avg)}" + (f" (average of {count})" if count > 1 else "")
+            text = (f"eBay sold: {currency.fmt_local(avg)}" + (f" (average of {count})" if count > 1 else "")
                     + f", latest {_friendly_day(newest).lower()}.")
             if r.value:
-                diff = (avg - r.value) / r.value
+                diff = (currency.to_usd(avg) - r.value) / r.value
                 if abs(diff) >= 0.05:
                     text += (f" {abs(diff):.0%} {'above' if diff > 0 else 'below'} TCGplayer"
                              + (", so eBay may pay more." if diff > 0 else "."))

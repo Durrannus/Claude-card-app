@@ -11,7 +11,7 @@ from dataclasses import replace
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from . import pricing, theme
+from . import currency, pricing, theme
 from .db import CONDITIONS, IMAGE_TYPES, Card, CardDatabase
 
 try:  # Pillow is optional; without it only PNG and GIF photos can be previewed.
@@ -129,10 +129,11 @@ class CardDialog(tk.Toplevel):
             "rarity": tk.StringVar(value=self._card.rarity),
             "condition": tk.StringVar(value=self._card.condition),
             "quantity": tk.StringVar(value=str(self._card.quantity)),
-            "value": tk.StringVar(value=f"{self._card.value:.2f}"),
+            "value": tk.StringVar(value=f"{currency.from_usd(self._card.value):.2f}"),
             "paid": tk.StringVar(value=f"{self._card.purchase_price:.2f}" if self._card.purchase_price else ""),
         }
         self.wishlist_var = tk.BooleanVar(value=self._card.wishlist)
+        self._value_text = self.vars["value"].get()
         self.photo_var = tk.StringVar(value=Path(self._card.image_path).name if self._card.image_path else "(none)")
 
         value_row = ttk.Frame(form)
@@ -154,8 +155,8 @@ class CardDialog(tk.Toplevel):
             ("Rarity", ttk.Combobox(form, textvariable=self.vars["rarity"], values=RARITIES, width=38)),
             ("Condition", ttk.Combobox(form, textvariable=self.vars["condition"], values=CONDITIONS, width=38)),
             ("Quantity", ttk.Spinbox(form, textvariable=self.vars["quantity"], from_=0, to=9999, width=38)),
-            ("Value (each)", value_row),
-            ("Paid (each)", ttk.Entry(form, textvariable=self.vars["paid"], width=40)),
+            (f"Value (each, {currency.symbol()})", value_row),
+            (f"Paid (each, {currency.symbol()})", ttk.Entry(form, textvariable=self.vars["paid"], width=40)),
             ("Photo", photo_row),
             ("", ttk.Checkbutton(form, text="On my wishlist (I don't own it yet)", variable=self.wishlist_var)),
         ]
@@ -221,8 +222,8 @@ class CardDialog(tk.Toplevel):
             if error:
                 self.lookup_status.set(str(error))
             else:
-                self.vars["value"].set(f"{result.price:.2f}")
-                self.lookup_status.set(f"${result.price:,.2f} from {result.source}: {result.matched}")
+                self.vars["value"].set(f"{currency.from_usd(result.price):.2f}")
+                self.lookup_status.set(f"{currency.fmt(result.price)} from {result.source}: {result.matched}")
 
         run_in_background(self, lambda _report: pricing.lookup_price(card), done)
 
@@ -233,8 +234,11 @@ class CardDialog(tk.Toplevel):
             return
         try:
             quantity = int(self.vars["quantity"].get() or 0)
-            value = float(self.vars["value"].get().replace("$", "").replace(",", "") or 0)
-            paid = float(self.vars["paid"].get().replace("$", "").replace(",", "") or 0)
+            value_text = self.vars["value"].get()
+            # Values are kept in US dollars like looked-up prices; an unchanged
+            # value keeps its exact amount.
+            value = self._card.value if value_text == self._value_text else currency.to_usd(currency.parse(value_text))
+            paid = currency.parse(self.vars["paid"].get())
         except ValueError:
             messagebox.showerror(
                 "Invalid number", "Quantity must be a whole number, and value and paid must be numbers.",
@@ -319,7 +323,7 @@ class CardLoggerApp(ttk.Frame):
         ttk.Button(bar, text="Delete", style="Danger.TButton", command=self.delete_selected).pack(side="left", padx=(0, 6))
         self.move_button = ttk.Button(bar, command=self.move_selected)
         self.move_button.pack(side="left", padx=(0, 6))
-        self.price_button = ttk.Button(bar, text="$  Update prices", command=self.update_prices)
+        self.price_button = ttk.Button(bar, text="↻  Update prices", command=self.update_prices)
         self.price_button.pack(side="left")
         ttk.Button(bar, text="Export CSV", command=self.export_csv).pack(side="right")
         ttk.Button(bar, text="Import CSV", command=self.import_csv).pack(side="right", padx=(0, 6))
@@ -422,7 +426,7 @@ class CardLoggerApp(ttk.Frame):
                 iid=str(card.id),
                 tags=(theme.row_tag(i),),
                 values=[
-                    f"${card.value:,.2f}" if field == "value" else getattr(card, field)
+                    currency.fmt(card.value) if field == "value" else getattr(card, field)
                     for field, *_ in COLUMNS
                 ],
             )
@@ -434,13 +438,13 @@ class CardLoggerApp(ttk.Frame):
         wanted = self.db.stats(wishlist=True)
         self.status.set(
             f"Showing {len(cards)} {'entry' if len(cards) == 1 else 'entries'} · "
-            f"{shown_qty} cards · ${shown_value:,.2f}"
+            f"{shown_qty} cards · {currency.fmt(shown_value)}"
         )
-        self.tiles["value"].value.set(f"${owned['total_value']:,.2f}")
+        self.tiles["value"].value.set(currency.fmt(owned['total_value']))
         self.tiles["cards"].value.set(f"{owned['total_cards']:,}")
         self.tiles["unique"].value.set(f"{owned['entries']:,}")
         self.tiles["wishlist"].value.set(
-            f"${wanted['total_value']:,.2f}"
+            currency.fmt(wanted['total_value'])
             + (f"  ·  {wanted['total_cards']} card{'s' if wanted['total_cards'] != 1 else ''}"
                if wanted["total_cards"] else "")
         )
@@ -484,8 +488,8 @@ class CardLoggerApp(ttk.Frame):
             " · ".join(filter(None, (card.rarity, card.condition))),
         ])))
         self.detail_value.set(
-            f"${card.value:,.2f}" if card.quantity == 1
-            else f"{card.quantity} × ${card.value:,.2f} = ${card.quantity * card.value:,.2f}"
+            currency.fmt(card.value) if card.quantity == 1
+            else f"{card.quantity} × {currency.fmt(card.value)} = {currency.fmt(card.quantity * card.value)}"
         )
         self.detail_notes.set(card.notes)
 
@@ -677,6 +681,7 @@ def build_window(root: tk.Tk, db: CardDatabase):
     root.geometry(f"{width}x{height}")
     root.minsize(min(1000, width), min(600, height))
     theme.apply_theme(root)
+    currency.configure(db)
 
     bar = theme.header(root, "Riftbound collection and market tracker: spot the right time to buy and sell")
     bar.pack(fill="x")
@@ -709,7 +714,34 @@ def build_window(root: tk.Tk, db: CardDatabase):
     tabs.add(insight_tab, text="  Future insight  ")
     # Each tab shows data the others change, so refresh the one being opened.
     tabs.bind("<<NotebookTabChanged>>", lambda _: tabs.nametowidget(tabs.select()).refresh())
+    add_currency_picker(root, bar, db, lambda: tabs.nametowidget(tabs.select()).refresh())
     return tabs, collection, meta, market_tab, insight_tab
+
+
+def add_currency_picker(root: tk.Tk, bar: ttk.Frame, db: CardDatabase, refresh) -> ttk.Combobox:
+    """A currency choice in the title bar. Today's exchange rates download
+    quietly at startup (once a day); until then the last ones are used."""
+    var = tk.StringVar(value=currency.label())
+    box = ttk.Combobox(bar, textvariable=var, values=list(currency.CHOICES), state="readonly", width=7)
+    box.pack(side="right", padx=(0, 16))
+    ttk.Label(bar, text="Currency", style="Subtitle.TLabel").pack(side="right", padx=(0, 6))
+
+    def chosen(_event=None) -> None:
+        new = currency.CHOICES[var.get()]
+        if new != currency.code():
+            currency.set_currency(db, new)
+            refresh()
+
+    box.bind("<<ComboboxSelected>>", chosen)
+
+    def downloaded(fetched, error) -> None:
+        if not error:  # offline: keep the last rates and try again next start
+            currency.save_rates(db, fetched)
+            refresh()
+
+    if currency.rates_due(db):
+        root.after(1500, lambda: run_in_background(root, lambda report: currency.fetch_rates(), downloaded))
+    return box
 
 
 def add_update_button(root: tk.Tk, bar: ttk.Frame) -> ttk.Button:

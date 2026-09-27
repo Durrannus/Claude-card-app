@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from urllib.parse import quote_plus
 
+from . import currency
 from .db import Card, CardDatabase, name_key
 from .meta import LEGEND, RUNES, MetaTracker
 
@@ -303,7 +304,9 @@ def analyse(db: CardDatabase, meta: MetaTracker, days: int = 14, top: int | None
         is_meta_game = not card.game or "riftbound" in name_key(card.game)
         trend = trends.get(key) if is_meta_game else None
         signal, reason = decide(qty, trend, change)
-        rows.append(MarketRow(card.name, qty, card, card.value, paid_total / paid_qty if paid_qty else 0.0,
+        # Prices paid are typed in your currency; rows work in US dollars like the prices.
+        paid = currency.to_usd(paid_total / paid_qty) if paid_qty else 0.0
+        rows.append(MarketRow(card.name, qty, card, card.value, paid,
                               trend, change, signal, reason))
 
     for key, trend in trends.items():

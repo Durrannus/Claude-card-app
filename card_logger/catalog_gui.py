@@ -4,7 +4,7 @@ import tkinter as tk
 import webbrowser
 from tkinter import messagebox, ttk
 
-from . import catalog, market, theme
+from . import catalog, currency, market, theme
 from .charts import LineChart
 from .db import Card, CardDatabase, name_key
 from .meta import MetaTracker
@@ -32,8 +32,8 @@ COLUMNS = [
 ]
 
 
-def _money(v: float) -> str:
-    return f"${v:,.2f}"
+def _money(usd: float) -> str:
+    return currency.fmt(usd)
 
 
 def _pct(v: float | None) -> str:
@@ -79,7 +79,8 @@ class AllCardsView(ttk.Frame):
         meta_box.pack(side="left", padx=(8, 0))
         meta_box.bind("<<ComboboxSelected>>", lambda _: self.fill())
         self.min_price = tk.BooleanVar(value=False)
-        ttk.Checkbutton(bar, text="$1 and up", variable=self.min_price, command=self.fill).pack(side="left", padx=12)
+        self.min_price_box = ttk.Checkbutton(bar, variable=self.min_price, command=self.fill)
+        self.min_price_box.pack(side="left", padx=12)
         self.count = tk.StringVar()
         ttk.Label(bar, textvariable=self.count, style="Muted.TLabel").pack(side="right")
 
@@ -196,6 +197,7 @@ class AllCardsView(ttk.Frame):
         self.fill()
 
     def fill(self) -> None:
+        self.min_price_box.configure(text=f"{currency.symbol()}1 and up")
         text = self.search.get().strip().lower()
         want_set, want_rarity = self.set_var.get(), self.rarity_var.get()
         shown = [c for c in self.cards
@@ -203,7 +205,7 @@ class AllCardsView(ttk.Frame):
                  and (want_set == ALL_SETS or c.set_name == want_set)
                  and (want_rarity == ALL_RARITIES or c.rarity == want_rarity)
                  and (self.version_var.get() == ALL_VERSIONS or c.version == self.version_var.get())
-                 and (not self.min_price.get() or c.main_price >= 1)
+                 and (not self.min_price.get() or currency.from_usd(c.main_price) >= 1)
                  and self._meta_ok(c)]
         # Cards with no value for the column (e.g. no price) always go last.
         known = [c for c in shown if self._value(c, self.sort_key) is not None]
@@ -227,7 +229,7 @@ class AllCardsView(ttk.Frame):
                 c.base_name, c.code, SHORT_VERSION.get(c.version, c.version),
                 (_money(c.main_price) + (" F" if c.is_foil_only else "")) if c.main_price else "—",
                 _pct(c.change_pct(1)), _pct(d7),
-                f"€{c.cm_price:,.2f}" if c.cm_price else "",
+                currency.fmt_eur(c.cm_price) if c.cm_price else "",
                 f"{self.play[k]:.0%}" if k in self.play else "",
                 self._meta_text(c),
                 self.owned.get(k) or "",
@@ -268,7 +270,7 @@ class AllCardsView(ttk.Frame):
                                                   "with its current price.")
             self.d_price.set("")
             self.d_facts.set("Tip: click a column heading to sort. Click \"7 days\" for the week's biggest movers "
-                             "(tick \"$1 and up\" to skip penny cards)."
+                             f"(tick \"{currency.symbol()}1 and up\" to skip penny cards)."
                              if self.cards else "")
             self.price_chart.set_data([])
             self.play_chart.set_data([])
@@ -287,7 +289,8 @@ class AllCardsView(ttk.Frame):
                 facts.append(f"{label}: no change" if abs(delta) < 0.005 else
                              f"{label}: {_pct(c.change_pct(days))} ({'+' if delta >= 0 else '−'}{_money(abs(delta))})")
         if c.cm_price:
-            facts.append(f"EU price (Cardmarket) €{c.cm_price:,.2f}")
+            facts.append(f"EU price (Cardmarket) {currency.fmt_eur(c.cm_price)}"
+                         + (f" (€{c.cm_price:,.2f})" if currency.code() != "EUR" else ""))
         facts.append(f"Played in {self.play[k]:.0%} of decklists" if k in self.play else "Not in your decklists")
         trend = self.trends.get(k)
         if trend is not None and trend.enough_data:

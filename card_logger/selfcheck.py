@@ -15,7 +15,7 @@ from datetime import date
 
 import os
 
-from . import pricing, riftboundgg, topdeck
+from . import currency, pricing, riftboundgg, topdeck
 from .db import Card, CardDatabase, DEFAULT_DB_PATH
 
 SAMPLE_CHARS = 1500
@@ -112,6 +112,11 @@ def check_other(rec: Recorder, game: str, name: str) -> str:
     return f"'{name}': ${result.price:,.2f} ({result.matched})"
 
 
+def check_exchange_rates(rec: Recorder) -> str:
+    rates, day, source = currency.fetch_rates(fetch=rec.fetch)
+    return f"$1 = £{rates['GBP']:.4f} = €{rates['EUR']:.4f} on {day} ({source})"
+
+
 CHECKS = [
     ("Riftbound prices (TCGCSV)", check_riftbound_prices),
     ("Riftbound decklists (riftbound.gg)", check_riftboundgg),
@@ -119,6 +124,7 @@ CHECKS = [
     ("Magic prices (Scryfall)", lambda rec: check_other(rec, "Magic", "Lightning Bolt")),
     ("Pokémon prices (Pokémon TCG API)", lambda rec: check_other(rec, "Pokémon", "Pikachu")),
     ("Yu-Gi-Oh! prices (YGOPRODeck)", lambda rec: check_other(rec, "Yu-Gi-Oh!", "Dark Magician")),
+    ("Exchange rates (ECB via frankfurter.dev)", check_exchange_rates),
 ]
 
 

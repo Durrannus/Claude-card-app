@@ -1,6 +1,7 @@
 import unittest
 from datetime import date, timedelta
 
+from card_logger import currency
 from card_logger.db import Card, CardDatabase
 from card_logger.market import (
     BUY_EARLY, HOLD, HOLD_RISING, NO_SIGNAL, SELL_FALLING, SELL_HYPE, SELL_SPIKE, WATCH,
@@ -114,6 +115,8 @@ class TrendTest(unittest.TestCase):
         self.db.record_price("Rising Star", 3.1, day=day(0))
         self.db.record_price("Filler", 1.0, day=day(20))
         self.db.record_price("Filler", 1.0, day=day(0))
+        self.db.set_setting("currency", "USD")
+        currency.configure(self.db)
         rows = {r.name: r for r in analyse(self.db, self.meta, days=14)}
         self.assertEqual(rows["Old Staple"].signal, SELL_FALLING)
         self.assertEqual(rows["Old Staple"].profit, 16.0)
@@ -216,3 +219,16 @@ class MarketSnapshotTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PoundsTest(unittest.TestCase):
+    def test_profit_uses_paid_in_pounds(self):
+        db = CardDatabase(":memory:")
+        db.set_setting("currency", "GBP")
+        db.set_setting("fx_rates", '{"rates": {"USD": 1, "GBP": 0.8, "EUR": 0.9}, "day": "2026-09-25"}')
+        currency.configure(db)
+        # Worth $10 = £8 each; paid £5 each for 2 copies: £6 profit.
+        db.add(Card(name="Pricey", game="Riftbound", quantity=2, value=10.0, purchase_price=5.0))
+        row = analyse(db, MetaTracker(db), days=14)[0]
+        self.assertAlmostEqual(currency.from_usd(row.profit), 6.0)
+        self.assertEqual(currency.fmt(row.paid), "£5.00")

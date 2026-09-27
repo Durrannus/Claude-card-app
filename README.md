@@ -86,10 +86,28 @@ the wishlist don't count towards your collection's totals. Use
 **Move to wishlist** / **Mark as owned** to move selected cards between the
 two, or tick "On my wishlist" in the Add/Edit form.
 
+## Currency (pounds by default)
+
+All prices are shown in **£ GBP** unless you pick **$ USD** or **€ EUR** in
+the **Currency** box at the top of the window. Card prices come in US dollars
+(TCGplayer) and euros (Cardmarket), and the app converts them at the day's
+exchange rate from the European Central Bank (via
+[frankfurter.dev](https://frankfurter.dev), with
+[ExchangeRate-API](https://www.exchangerate-api.com) as a backup; "Rates By
+Exchange Rate API"). The rates download when you open the app, once a day.
+Offline, the last rates are used.
+
+Amounts you type are in your chosen currency: **Value** and **Paid** in the
+card form, and eBay **sold prices**. What you paid and your sold prices are
+kept exactly as you typed them (paid £40 always shows £40), and are converted
+if you switch currency. Prices are still stored in dollars, so the price
+history stays consistent, and the CSV export's `value` column is in US
+dollars.
+
 ## Price lookup
 
-Prices come from free public databases, in US dollars, based on TCGplayer
-market prices. An internet connection is needed. The card's **Game** must be
+Prices come from free public databases, based on TCGplayer market prices,
+and are shown in your currency. An internet connection is needed. The card's **Game** must be
 one of these:
 
 | Game | Source |
@@ -273,7 +291,7 @@ It also shows each card's **meta move**: how its play rate changed over the
 **Compare** period (e.g. the last 7 days of decklists against the 7 before).
 Search by name or card code; filter by set, rarity, version (e.g. only Signatures) or meta (rising, falling,
 played or not played); and click any column heading to sort. For example, click **7 days** for the week's biggest movers
-(tick **$1 and up** to skip penny cards). Select a card to see its set, rarity and type, its price
+(tick **£1 and up** to skip penny cards). Select a card to see its set, rarity and type, its price
 history chart and weekly play rate, add it to your collection or wishlist,
 check eBay's sold listings, or open the card image.
 
@@ -333,8 +351,8 @@ So eBay prices are a quick manual step instead:
 
 The **eBay sold** column then shows the average of the last 30 days, and
 the side panel tells you how it compares with the TCGplayer price. That
-helps you decide where to sell. Enter prices in the same currency as your
-other prices (TCGplayer prices are in US dollars).
+helps you decide where to sell. Enter prices in your chosen currency (£ by
+default), e.g. what you see on ebay.co.uk.
 
 ### Keeping the data fresh
 
