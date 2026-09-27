@@ -333,17 +333,9 @@ class MetaTrackerTab(ttk.Frame):
 
     def _make_tree(self, parent, columns, height=None) -> ttk.Treeview:
         frame = ttk.Frame(parent)
-        tree = ttk.Treeview(frame, columns=[c[0] for c in columns], show="headings",
-                            selectmode="extended", **({"height": height} if height else {}))
-        for key, heading, width, anchor in columns:
-            tree.heading(key, text=heading)
-            tree.column(key, width=width, anchor=anchor)
-        scroll = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
-        tree.configure(yscrollcommand=scroll.set)
-        theme.stripe(tree)
+        tree = theme.make_table(frame, columns, flexible=("name", "event", "legend", "player"),
+                                selectmode="extended", **({"height": height} if height else {}))
         tree.bind("<Control-a>", lambda _: tree.selection_set(tree.get_children()))
-        tree.pack(side="left", fill="both", expand=True)
-        scroll.pack(side="right", fill="y")
         frame.pack(fill="both", expand=True)
         return tree
 

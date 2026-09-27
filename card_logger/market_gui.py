@@ -64,7 +64,7 @@ class SoldPriceDialog(tk.Toplevel):
         form.pack(fill="both", expand=True)
         ttk.Label(form, text=name, style="Section.TLabel", font=theme.font(14, "bold")).grid(
             row=0, column=0, columnspan=3, sticky="w")
-        ttk.Label(form, style="Muted.TLabel", wraplength=380, justify="left", text=(
+        ttk.Label(form, style="Muted.TLabel", wraplength=theme.px(380), justify="left", text=(
             "Add each sold price you see, one at a time: the price one copy sold for, in the same currency "
             "as your other prices.")).grid(row=1, column=0, columnspan=3, sticky="w", pady=(4, 12))
 
@@ -209,7 +209,7 @@ class MarketTab(ttk.Frame):
                                       trend_days=lambda: WINDOWS[self.window_var.get()])
         body = self.signal_body = ttk.Frame(self)
 
-        details = ttk.Frame(body, style="Card.TFrame", padding=14, width=336)
+        details = ttk.Frame(body, style="Card.TFrame", padding=14, width=theme.px(336))
         details.pack(side="right", fill="y", padx=(12, 0))
         details.pack_propagate(False)
         self._build_details(details)
@@ -236,19 +236,10 @@ class MarketTab(ttk.Frame):
 
         table = ttk.Frame(left, style="Card.TFrame", padding=1)
         table.pack(side="top", fill="both", expand=True)
-        self.tree = ttk.Treeview(table, columns=[c[0] for c in COLUMNS], show="headings", selectmode="extended")
-        for key, heading, width, anchor in COLUMNS:
-            self.tree.heading(key, text=heading, command=lambda k=key: self.sort_by(k))
-            # Only the card name gives up width when space is short.
-            self.tree.column(key, width=width, anchor=anchor, minwidth=40 if key == "name" else width,
-                             stretch=key == "name")
-        theme.stripe(self.tree)
+        self.tree = theme.make_table(table, COLUMNS, on_sort=self.sort_by, flexible=("name", "signal"),
+                                     selectmode="extended")
         for tag, color in TAG_COLORS.items():
             self.tree.tag_configure(tag, foreground=color)
-        scroll = ttk.Scrollbar(table, orient="vertical", command=self.tree.yview)
-        self.tree.configure(yscrollcommand=scroll.set)
-        self.tree.pack(side="left", fill="both", expand=True)
-        scroll.pack(side="right", fill="y")
         self.tree.bind("<<TreeviewSelect>>", lambda _: self.show_details())
 
     def _build_details(self, panel: ttk.Frame) -> None:
@@ -256,17 +247,17 @@ class MarketTab(ttk.Frame):
         self.d_signal = tk.StringVar()
         self.d_reason = tk.StringVar()
         self.d_facts = tk.StringVar()
-        ttk.Label(panel, textvariable=self.d_name, style="CardName.TLabel", wraplength=306).pack(anchor="w")
+        ttk.Label(panel, textvariable=self.d_name, style="CardName.TLabel", wraplength=theme.px(306)).pack(anchor="w")
         self.signal_label = tk.Label(panel, textvariable=self.d_signal, background=theme.SURFACE,
                                      font=theme.font(13, "bold"), anchor="w")
         self.signal_label.pack(anchor="w", pady=(4, 2))
-        ttk.Label(panel, textvariable=self.d_reason, style="Card.TLabel", wraplength=306,
+        ttk.Label(panel, textvariable=self.d_reason, style="Card.TLabel", wraplength=theme.px(306),
                   justify="left").pack(anchor="w")
-        ttk.Label(panel, textvariable=self.d_facts, style="CardMuted.TLabel", wraplength=306,
+        ttk.Label(panel, textvariable=self.d_facts, style="CardMuted.TLabel", wraplength=theme.px(306),
                   justify="left").pack(anchor="w", pady=(6, 4))
 
         self.d_ebay = tk.StringVar()
-        ttk.Label(panel, textvariable=self.d_ebay, style="Card.TLabel", wraplength=306,
+        ttk.Label(panel, textvariable=self.d_ebay, style="Card.TLabel", wraplength=theme.px(306),
                   justify="left").pack(anchor="w")
         ebay = ttk.Frame(panel, style="Header.TFrame")
         ebay.pack(anchor="w", pady=(6, 10))

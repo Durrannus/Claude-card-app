@@ -78,7 +78,7 @@ class AllCardsView(ttk.Frame):
 
         body = ttk.Frame(self)
         body.pack(fill="both", expand=True)
-        details = ttk.Frame(body, style="Card.TFrame", padding=14, width=336)
+        details = ttk.Frame(body, style="Card.TFrame", padding=14, width=theme.px(336))
         details.pack(side="right", fill="y", padx=(12, 0))
         details.pack_propagate(False)
         self._build_details(details)
@@ -105,28 +105,20 @@ class AllCardsView(ttk.Frame):
 
         table = ttk.Frame(left, style="Card.TFrame", padding=1)
         table.pack(side="top", fill="both", expand=True)
-        self.tree = ttk.Treeview(table, columns=[c[0] for c in COLUMNS], show="headings", selectmode="browse")
-        for key, heading, width, anchor, _ in COLUMNS:
-            self.tree.heading(key, text=heading, command=lambda k=key: self.sort_by(k))
-            self.tree.column(key, width=width, anchor=anchor, minwidth=60 if key == "name" else width,
-                             stretch=key == "name")
-        theme.stripe(self.tree)
+        self.tree = theme.make_table(table, COLUMNS, on_sort=self.sort_by, flexible=("name", "set"),
+                                     selectmode="browse")
         self.tree.tag_configure("up", foreground=theme.GOOD)
         self.tree.tag_configure("down", foreground=theme.BAD)
-        scroll = ttk.Scrollbar(table, orient="vertical", command=self.tree.yview)
-        self.tree.configure(yscrollcommand=scroll.set)
-        self.tree.pack(side="left", fill="both", expand=True)
-        scroll.pack(side="right", fill="y")
         self.tree.bind("<<TreeviewSelect>>", lambda _: self.show_details())
 
     def _build_details(self, panel) -> None:
         self.d_name, self.d_info, self.d_price, self.d_facts = (tk.StringVar() for _ in range(4))
-        ttk.Label(panel, textvariable=self.d_name, style="CardName.TLabel", wraplength=306).pack(anchor="w")
-        ttk.Label(panel, textvariable=self.d_info, style="CardMuted.TLabel", wraplength=306,
+        ttk.Label(panel, textvariable=self.d_name, style="CardName.TLabel", wraplength=theme.px(306)).pack(anchor="w")
+        ttk.Label(panel, textvariable=self.d_info, style="CardMuted.TLabel", wraplength=theme.px(306),
                   justify="left").pack(anchor="w", pady=(2, 6))
         ttk.Label(panel, textvariable=self.d_price, style="CardSection.TLabel", font=theme.font(15, "bold")).pack(
             anchor="w")
-        ttk.Label(panel, textvariable=self.d_facts, style="Card.TLabel", wraplength=306,
+        ttk.Label(panel, textvariable=self.d_facts, style="Card.TLabel", wraplength=theme.px(306),
                   justify="left").pack(anchor="w", pady=(4, 8))
 
         buttons = ttk.Frame(panel, style="Header.TFrame")

@@ -164,7 +164,7 @@ class CardDialog(tk.Toplevel):
             widget.grid(row=i, column=1, sticky="ew", pady=4)
 
         self.lookup_status = tk.StringVar()
-        ttk.Label(form, textvariable=self.lookup_status, style="Good.TLabel", wraplength=360).grid(
+        ttk.Label(form, textvariable=self.lookup_status, style="Good.TLabel", wraplength=theme.px(360)).grid(
             row=len(rows) + 1, column=1, sticky="w"
         )
 
@@ -329,21 +329,11 @@ class CardLoggerApp(ttk.Frame):
         body.pack(fill="both", expand=True)
 
         # Packed first so it keeps its width and the table shrinks instead.
-        details = ttk.Frame(body, style="Card.TFrame", padding=14, width=PREVIEW_SIZE[0] + 70)
+        details = ttk.Frame(body, style="Card.TFrame", padding=14, width=theme.px(PREVIEW_SIZE[0] + 70))
         details.pack(side="right", fill="y", padx=(12, 0))
         details.pack_propagate(False)
         table = ttk.Frame(body, style="Card.TFrame", padding=1)
-        self.tree = ttk.Treeview(
-            table, columns=[c[0] for c in COLUMNS], show="headings", selectmode="extended"
-        )
-        for field, heading, width, anchor in COLUMNS:
-            self.tree.heading(field, text=heading, command=lambda f=field: self.sort_by(f))
-            self.tree.column(field, width=width, anchor=anchor)
-        scroll = ttk.Scrollbar(table, orient="vertical", command=self.tree.yview)
-        self.tree.configure(yscrollcommand=scroll.set)
-        theme.stripe(self.tree)
-        self.tree.pack(side="left", fill="both", expand=True)
-        scroll.pack(side="right", fill="y")
+        self.tree = theme.make_table(table, COLUMNS, on_sort=self.sort_by, selectmode="extended")
         table.pack(side="left", fill="both", expand=True)
 
         self.tree.bind("<Double-1>", lambda _: self.edit_selected())
@@ -357,7 +347,7 @@ class CardLoggerApp(ttk.Frame):
         self.detail_info = tk.StringVar()
         self.detail_value = tk.StringVar()
         self.detail_notes = tk.StringVar()
-        wrap = PREVIEW_SIZE[0] + 40
+        wrap = theme.px(PREVIEW_SIZE[0] + 40)
         ttk.Label(details, textvariable=self.detail_name, style="CardName.TLabel", wraplength=wrap).pack(anchor="w")
         ttk.Label(details, textvariable=self.detail_info, style="CardMuted.TLabel", wraplength=wrap,
                   justify="left").pack(anchor="w", pady=(2, 4))
@@ -679,9 +669,11 @@ def build_window(root: tk.Tk, db: CardDatabase):
     from .meta_gui import MetaTrackerTab
 
     root.title("Card Collection Logger")
-    # Fit the screen, up to a comfortable size.
-    width = min(1320, root.winfo_screenwidth() - 40)
-    height = min(860, root.winfo_screenheight() - 80)
+    # Fit the screen, up to a comfortable size (bigger with display scaling,
+    # e.g. Windows at 125%, where all the text is bigger too).
+    scale = theme.display_scale(root)
+    width = min(int(1320 * scale), root.winfo_screenwidth() - 40)
+    height = min(int(860 * scale), root.winfo_screenheight() - 80)
     root.geometry(f"{width}x{height}")
     root.minsize(min(1000, width), min(600, height))
     theme.apply_theme(root)

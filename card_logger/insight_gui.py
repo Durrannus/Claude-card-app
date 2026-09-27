@@ -75,7 +75,7 @@ class InsightTab(ttk.Frame):
 
         body = ttk.Frame(self)
         body.pack(fill="both", expand=True)
-        details = ttk.Frame(body, style="Card.TFrame", padding=14, width=336)
+        details = ttk.Frame(body, style="Card.TFrame", padding=14, width=theme.px(336))
         details.pack(side="right", fill="y", padx=(12, 0))
         details.pack_propagate(False)
         self._build_details(details)
@@ -103,23 +103,13 @@ class InsightTab(ttk.Frame):
     def _tree(self, parent, columns, height=None) -> ttk.Treeview:
         frame = ttk.Frame(parent, style="Header.TFrame")
         frame.pack(fill="both", expand=True)
-        tree = ttk.Treeview(frame, columns=[c[0] for c in columns], show="headings",
-                            selectmode="extended", **({"height": height} if height else {}))
-        for key, heading, width, anchor in columns:
-            tree.heading(key, text=heading)
-            tree.column(key, width=width, anchor=anchor, minwidth=width if key != "signs" else 80,
-                        stretch=key in ("signs", "legend"))
-        theme.stripe(tree)
-        scroll = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
-        tree.configure(yscrollcommand=scroll.set)
-        tree.pack(side="left", fill="both", expand=True)
-        scroll.pack(side="right", fill="y")
-        return tree
+        return theme.make_table(frame, columns, flexible=("name", "signs", "legend"),
+                                selectmode="extended", **({"height": height} if height else {}))
 
     def _build_details(self, panel: ttk.Frame) -> None:
         self.d_name = tk.StringVar()
         self.d_score = tk.StringVar()
-        ttk.Label(panel, textvariable=self.d_name, style="CardName.TLabel", wraplength=306).pack(anchor="w")
+        ttk.Label(panel, textvariable=self.d_name, style="CardName.TLabel", wraplength=theme.px(306)).pack(anchor="w")
         ttk.Label(panel, textvariable=self.d_score, style="CardSection.TLabel").pack(anchor="w", pady=(2, 8))
         self.signs_frame = ttk.Frame(panel, style="Header.TFrame")
         self.signs_frame.pack(fill="both", expand=True, anchor="n")
@@ -180,7 +170,7 @@ class InsightTab(ttk.Frame):
         if not sel:
             self.d_name.set("No card selected" if self.shown else "Nothing to watch yet")
             self.d_score.set("")
-            ttk.Label(self.signs_frame, style="Card.TLabel", wraplength=306, justify="left", text=(
+            ttk.Label(self.signs_frame, style="Card.TLabel", wraplength=theme.px(306), justify="left", text=(
                 self.report.message or "No card shows early signs right now. Check back after importing "
                 "more tournaments and updating prices.")).pack(anchor="w")
             self.wish_button.state(["disabled"])
@@ -192,7 +182,7 @@ class InsightTab(ttk.Frame):
         for sign in sorted(c.signs, key=lambda s: -s.points):
             ttk.Label(self.signs_frame, text=f"▸ {sign.kind}", style="Card.TLabel",
                       font=theme.font(10, "bold")).pack(anchor="w", pady=(4, 0))
-            ttk.Label(self.signs_frame, text=sign.detail, style="CardMuted.TLabel", wraplength=286,
+            ttk.Label(self.signs_frame, text=sign.detail, style="CardMuted.TLabel", wraplength=theme.px(286),
                       justify="left").pack(anchor="w", padx=(14, 0))
         if c.owned:
             ttk.Label(self.signs_frame, text=f"You own {c.owned}.", style="Card.TLabel").pack(anchor="w", pady=(8, 0))
