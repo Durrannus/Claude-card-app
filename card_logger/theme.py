@@ -179,7 +179,8 @@ def style_text(widget: tk.Text) -> None:
                      highlightcolor=GOLD, padx=8, pady=6, font=font(10))
 
 
-def make_table(container: tk.Misc, columns, on_sort=None, flexible=("name",), **tree_options) -> ttk.Treeview:
+def make_table(container: tk.Misc, columns, on_sort=None, flexible=("name",), fit_text=None,
+               **tree_options) -> ttk.Treeview:
     """Build a striped table filling `container`, with scroll bars both ways.
 
     `columns` are (key, heading, width, anchor, ...) tuples; widths are for a
@@ -188,27 +189,40 @@ def make_table(container: tk.Misc, columns, on_sort=None, flexible=("name",), **
     used here, so headings never get cut off; when the window is narrow,
     columns shrink down to that, and a horizontal scroll bar appears only if
     they still don't fit. `flexible` columns (like card names) can shrink
-    further and are cut off first.
+    below their heading width and get any spare room. `fit_text` maps a
+    column to sample content (e.g. its longest card code) it must always fit.
     """
     tree = ttk.Treeview(container, columns=[c[0] for c in columns], show="headings", **tree_options)
     heading_font = tkfont.Font(font=font(10, "bold"))
+    body_font = tkfont.Font(font=font(10))
+    content_min = {k: body_font.measure(text) + 20 for k, text in (fit_text or {}).items()}
     scale = display_scale(tree)
     preferred, minimum = {}, {}
+
+    def measure_headings():
+        """Minimum widths from the headings as currently shown (only the
+        sorted column carries an arrow, so only it needs room for one)."""
+        for key, *_ in columns:
+            needed = heading_font.measure(tree.heading(key, "text")) + 22
+            minimum[key] = min(needed, int(90 * scale)) if key in flexible else needed
+            minimum[key] = max(minimum[key], content_min.get(key, 0))
+            tree.column(key, minwidth=minimum[key])
+
     for key, heading, width, anchor, *_ in columns:
-        needed = heading_font.measure(heading + " ▼") + 24
-        preferred[key] = max(int(width * scale), needed)
-        minimum[key] = min(needed, int(90 * scale)) if key in flexible else needed
+        preferred[key] = max(int(width * scale), heading_font.measure(heading) + 22, content_min.get(key, 0))
         tree.heading(key, text=heading, command=(lambda k=key: on_sort(k)) if on_sort else "")
-        tree.column(key, width=preferred[key], minwidth=minimum[key], anchor=anchor, stretch=False)
+        tree.column(key, width=preferred[key], anchor=anchor, stretch=False)
+    measure_headings()
     stripe(tree)
 
     def fit(_event=None):
         """Share the table's width between its columns: extra room goes to
-        flexible columns; when short of room, flexible columns shrink first,
-        then the rest, never below their heading."""
-        available = tree.winfo_width() - 4
+        flexible columns; when short of room, all columns shrink in
+        proportion to their spare room, never below their heading."""
+        available = tree.winfo_width() - 8  # leave room for the table's border
         if available < 50:
             return
+        measure_headings()
         widths = dict(preferred)
         flex = [k for k in widths if k in flexible] or list(widths)
         spare = available - sum(widths.values())
@@ -216,20 +230,19 @@ def make_table(container: tk.Misc, columns, on_sort=None, flexible=("name",), **
             for k in flex:
                 widths[k] += spare // len(flex)
         else:
-            for group in (flex, [k for k in widths if k not in flex]):
-                over = sum(widths.values()) - available
-                if over <= 0:
-                    break
-                slack = {k: widths[k] - minimum[k] for k in group}
-                total = sum(slack.values())
-                if total <= 0:
-                    continue
-                for k in group:
+            # Every column gives up room in proportion to its slack (how far it
+            # is above its minimum); flexible columns have the most slack.
+            over = sum(widths.values()) - available
+            slack = {k: widths[k] - minimum[k] for k in widths}
+            total = sum(slack.values())
+            if total > 0:
+                for k in widths:
                     widths[k] -= min(slack[k], round(over * slack[k] / total))
         for k, w in widths.items():
             if tree.column(k, "width") != w:
                 tree.column(k, width=max(w, minimum[k]))
     tree.bind("<Configure>", fit, add="+")
+    tree.bind("<<Refit>>", fit, add="+")  # sent after a heading's text changes (sort arrow)
     vertical = ttk.Scrollbar(container, orient="vertical", command=tree.yview)
     horizontal = ttk.Scrollbar(container, orient="horizontal", command=tree.xview)
     tree.configure(yscrollcommand=vertical.set, xscrollcommand=horizontal.set)

@@ -336,6 +336,7 @@ class MarketTab(ttk.Frame):
         for key, heading, *_ in COLUMNS:
             arrow = (" ▼" if self.sort_reverse else " ▲") if key == self.sort_key else ""
             self.tree.heading(key, text=heading + arrow)
+        self.tree.event_generate("<<Refit>>")
 
         selected = set(self.tree.selection())
         self.tree.delete(*self.tree.get_children())
