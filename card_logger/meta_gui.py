@@ -6,7 +6,7 @@ from datetime import date
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
-from . import theme
+from . import limitless, theme
 from .db import Card, CardDatabase
 from .meta import (
     BATTLEFIELDS, CHAMPION, LEGEND, MAIN, RUNES, SECTIONS, Deck, MetaTracker, card_key, parse_decklist,
@@ -157,6 +157,61 @@ class DeckDialog(tk.Toplevel):
         self.destroy()
 
 
+class ImportDialog(tk.Toplevel):
+    """Settings for importing tournaments from Limitless."""
+
+    def __init__(self, parent, db: CardDatabase):
+        super().__init__(parent)
+        self.title("Import tournaments")
+        self.transient(parent)
+        self.resizable(False, False)
+        self.db = db
+        self.accepted = False
+
+        form = ttk.Frame(self, padding=20)
+        form.pack(fill="both", expand=True)
+        ttk.Label(form, text="Import tournaments", style="Section.TLabel", font=theme.font(14, "bold")).grid(
+            row=0, column=0, columnspan=2, sticky="w")
+        ttk.Label(form, style="Muted.TLabel", wraplength=420, justify="left", text=(
+            "Downloads finished Riftbound tournaments from Limitless (play.limitlesstcg.com), with every "
+            "player's placing and decklist where the organiser made them public. Tournaments you've "
+            "already imported are skipped."
+        )).grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 12))
+
+        self.days = tk.StringVar(value=db.get_setting("import_days", "30"))
+        self.min_players = tk.StringVar(value=db.get_setting("import_min_players", "8"))
+        self.auto = tk.BooleanVar(value=db.get_setting("auto_import") == "1")
+        ttk.Label(form, text="Look back (days)", style="Muted.TLabel").grid(row=2, column=0, sticky="w", pady=4)
+        ttk.Spinbox(form, textvariable=self.days, from_=1, to=365, width=8).grid(row=2, column=1, sticky="w")
+        ttk.Label(form, text="Minimum players", style="Muted.TLabel").grid(row=3, column=0, sticky="w", pady=4)
+        ttk.Spinbox(form, textvariable=self.min_players, from_=2, to=1024, width=8).grid(row=3, column=1, sticky="w")
+        ttk.Checkbutton(form, text="Import new tournaments automatically each day", variable=self.auto).grid(
+            row=4, column=0, columnspan=2, sticky="w", pady=(8, 0))
+
+        buttons = ttk.Frame(form)
+        buttons.grid(row=5, column=0, columnspan=2, sticky="e", pady=(16, 0))
+        ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side="right")
+        ttk.Button(buttons, text="Import", style="Accent.TButton", command=self._ok).pack(side="right", padx=(0, 8))
+        self.bind("<Escape>", lambda e: self.destroy())
+        self.bind("<Return>", lambda e: self._ok())
+        self.grab_set()
+        self.wait_window()
+
+    def _ok(self) -> None:
+        try:
+            days, players = int(self.days.get()), int(self.min_players.get())
+            if days < 1 or players < 1:
+                raise ValueError
+        except ValueError:
+            messagebox.showerror("Import tournaments", "Enter whole numbers above zero.", parent=self)
+            return
+        self.db.set_setting("import_days", str(days))
+        self.db.set_setting("import_min_players", str(players))
+        self.db.set_setting("auto_import", "1" if self.auto.get() else "0")
+        self.accepted = True
+        self.destroy()
+
+
 class MetaTrackerTab(ttk.Frame):
     def __init__(self, parent: tk.Misc, db: CardDatabase, on_collection_changed=None):
         super().__init__(parent, padding=(16, 14, 16, 0))
@@ -182,8 +237,12 @@ class MetaTrackerTab(ttk.Frame):
         ttk.Label(self, textvariable=self.status, style="Status.TLabel", anchor="w").pack(
             side="bottom", fill="x", pady=(10, 0)
         )
+        self.importing = False
         self._build_body()
         self.refresh()
+
+        if db.get_setting("auto_import") == "1" and db.get_setting("last_auto_import") != date.today().isoformat():
+            self.after(2500, lambda: self.import_tournaments(silent=True))
 
     # --- layout ------------------------------------------------------------
 
@@ -215,9 +274,10 @@ class MetaTrackerTab(ttk.Frame):
 
         actions = ttk.Frame(self)
         actions.pack(fill="x", pady=(0, 10))
-        ttk.Button(actions, text="+  Add decklist", style="Accent.TButton", command=self.add_deck).pack(
-            side="left", padx=(0, 6)
-        )
+        self.import_button = ttk.Button(actions, text="⬇  Import tournaments", style="Accent.TButton",
+                                        command=self.ask_import)
+        self.import_button.pack(side="left", padx=(0, 6))
+        ttk.Button(actions, text="+  Add decklist", command=self.add_deck).pack(side="left", padx=(0, 6))
         ttk.Button(actions, text="Import .txt files…", command=self.import_files).pack(side="left", padx=(0, 6))
         ttk.Button(actions, text="View deck", command=self.view_deck).pack(side="left", padx=(0, 6))
         ttk.Button(actions, text="Delete deck", style="Danger.TButton", command=self.delete_decks).pack(side="left")
@@ -314,7 +374,8 @@ class MetaTrackerTab(ttk.Frame):
         shown = (f"{len(decks)} decklist{'s' if len(decks) != 1 else ''} from "
                  f"{len(events)} event{'s' if len(events) != 1 else ''}")
         total = len(self.meta.decks())
-        self.status.set(shown if len(decks) == total else f"{shown} (filtered from {total})")
+        if not self.importing:
+            self.status.set(shown if len(decks) == total else f"{shown} (filtered from {total})")
         self.tiles["decks"].value.set(f"{len(decks):,}")
         self.tiles["events"].value.set(f"{len(events):,}")
         top_legend = shares[0] if shares and not legend else None
@@ -334,6 +395,59 @@ class MetaTrackerTab(ttk.Frame):
             self.stats_tabs.select(self.usage_tab)
 
     # --- actions -------------------------------------------------------------
+
+    def ask_import(self) -> None:
+        dialog = ImportDialog(self.winfo_toplevel(), self.db)
+        if dialog.accepted:
+            self.import_tournaments()
+
+    def import_tournaments(self, silent: bool = False) -> None:
+        """Download new Riftbound tournaments from Limitless in the background."""
+        from .gui import run_in_background
+
+        if self.importing:
+            return
+        days = int(self.db.get_setting("import_days", "30"))
+        min_players = int(self.db.get_setting("import_min_players", "8"))
+        checked = limitless.checked_tournaments(self.meta)
+        game_id = self.db.get_setting("limitless_game_id")
+
+        def work(report):
+            report("Connecting to Limitless…")
+            gid = game_id or limitless.find_game_id()
+            return gid, limitless.fetch_events(gid, days, min_players, checked, report=report)
+
+        def done(result, error):
+            self.importing = False
+            self.import_button.state(["!disabled"])
+            if error:
+                self.refresh()
+                message = str(error) if isinstance(error, limitless.ImportError_) else f"Import stopped: {error}"
+                if silent:
+                    self.status.set(f"Automatic tournament import failed: {message}")
+                else:
+                    messagebox.showerror("Import tournaments", message)
+                return
+            gid, events = result
+            self.db.set_setting("limitless_game_id", gid)
+            added, tournaments = limitless.save_events(self.meta, events)
+            if silent:
+                self.db.set_setting("last_auto_import", date.today().isoformat())
+            self.refresh()
+            summary = (f"Imported {added} decklist{'s' if added != 1 else ''} from {tournaments} new "
+                       f"tournament{'s' if tournaments != 1 else ''} on Limitless.")
+            if silent:
+                self.status.set("Automatic import: " + summary)
+            else:
+                without = sum(1 for e in events if not e.decks)
+                messagebox.showinfo("Import tournaments", summary + (
+                    f"\n\n{without} tournament{'s' if without != 1 else ''} had no public decklists."
+                    if without else "") + ("" if events else
+                    f"\n\nNo new finished tournaments in the last {days} days with {min_players}+ players."))
+
+        self.importing = True
+        self.import_button.state(["disabled"])
+        run_in_background(self, work, done, on_progress=self.status.set)
 
     def add_deck(self) -> None:
         dialog = DeckDialog(self.winfo_toplevel())

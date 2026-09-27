@@ -116,7 +116,27 @@ For Riftbound:
 ## Meta tracker
 
 The **Meta tracker** tab shows what the competitive decks are playing.
-You feed it decklists from tournament results, and it adds them up.
+
+### Automatic import from Limitless
+
+Click **Import tournaments** to download finished Riftbound tournaments from
+[Limitless](https://play.limitlesstcg.com), a tournament platform many stores
+and online events run on. Each player's placing and decklist come in
+automatically, when the organiser made the decklists public.
+
+- **Look back (days)** and **Minimum players** choose which tournaments to
+  fetch. Use a higher minimum to focus on bigger, more competitive events.
+- Tournaments already imported are skipped, so importing again only adds
+  new ones.
+- Tick **Import new tournaments automatically each day** to fetch new
+  events whenever you open the app. With daily price updates also on, the
+  Market tab keeps itself up to date.
+
+Limitless only covers events run on its platform. Big official events and
+other sites' results aren't included, so add those by hand as below if you
+want them.
+
+### Adding decklists by hand
 
 1. Find decklists on a meta site such as [riftDecks](https://riftdecks.com),
    [riftbound.gg](https://riftbound.gg) or
@@ -144,9 +164,8 @@ Decklists can be in any of the common text formats: headings such as
 `Sideboard:`, with quantities written `3 Card`, `3x Card`, `Card x3` or
 `Card (x3)`. Lines with no heading count as the main deck.
 
-The meta tracker doesn't download decklists automatically. None of the meta
-sites offers a free public feed of their data, so the decklists come from
-you.
+The meta sites (riftDecks, riftbound.gg, Piltover Archive) don't offer a
+public data feed, which is why those decklists are added by hand.
 
 ### Tips
 
@@ -197,8 +216,8 @@ Signals are only as good as the data behind them:
   app opens" ticked). It refreshes your collection and wishlist values and
   saves today's price for every Riftbound card, so cards you don't own get a
   price history too. Price charts fill in as the days go by.
-- **Decklists:** add tournament results regularly in the Meta tracker tab,
-  with their dates. Trends compare recent decklists with older ones, so a
+- **Decklists:** turn on the automatic Limitless import in the Meta
+  tracker tab, and add other tournament results by hand, with their dates. Trends compare recent decklists with older ones, so a
   steady flow of dated lists is what makes early detection work.
 
 ## Where your data is stored
