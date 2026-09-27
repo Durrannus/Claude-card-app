@@ -208,6 +208,27 @@ A play-rate change only counts as rising or falling when there are at least
 (a z-score of 1.65 or more). These are rules of thumb from your own data, not
 guarantees, so check recent sold listings before you buy or sell.
 
+### eBay sold prices
+
+eBay doesn't let apps read sold listings automatically:
+
+- Its sold-price API (Marketplace Insights) needs business approval from
+  eBay and isn't open to new users.
+- The old free one (findCompletedItems) was shut down in 2025.
+- Scraping eBay's pages is against eBay's user agreement.
+
+So eBay prices are a quick manual step instead:
+
+1. Select a card in the Market tab and click **eBay ↗**. eBay's sold
+   listings for that card open in your browser, newest first. Pick your
+   eBay site (ebay.com, ebay.co.uk, …) in the box next to the buttons.
+2. Click **Log sold price** and enter a few of the prices you see.
+
+The **eBay sold** column then shows the average of the last 30 days, and
+the side panel tells you how it compares with the TCGplayer price. That
+helps you decide where to sell. Enter prices in the same currency as your
+other prices (TCGplayer prices are in US dollars).
+
 ### Keeping the data fresh
 
 Signals are only as good as the data behind them:

@@ -165,6 +165,35 @@ class PriceHistoryTest(unittest.TestCase):
         self.assertEqual(self.db.get_setting("x"), "1")
 
 
+class SoldPricesTest(unittest.TestCase):
+    def test_log_and_average(self):
+        from card_logger.market import recent_sold
+        db = CardDatabase(":memory:")
+        db.add_sold_price("Kennen, Storm of Shuriken", 5.0, day=day(40), note="old")
+        db.add_sold_price("Kennen - Storm of Shuriken", 4.0, day=day(5))
+        sid = db.add_sold_price("kennen storm of shuriken", 6.0, day=day(1), note="NM")
+        sold = db.sold_prices("Kennen, Storm of Shuriken")
+        self.assertEqual([s["price"] for s in sold], [6.0, 4.0, 5.0])  # newest first, any spelling
+        self.assertEqual(recent_sold(sold, 30, today=ANCHOR), (5.0, 2, day(1)))
+        self.assertEqual(recent_sold(sold[2:], 30, today=ANCHOR), (5.0, 1, day(40)))  # only old: newest alone
+        self.assertIsNone(recent_sold([]))
+        db.delete_sold_price(sid)
+        self.assertEqual(len(db.sold_prices("Kennen, Storm of Shuriken")), 2)
+        with self.assertRaises(ValueError):
+            db.add_sold_price("X", 0)
+        db.close()
+
+
+class EbayUrlTest(unittest.TestCase):
+    def test_sold_listings_url(self):
+        from card_logger.market import ebay_sold_url
+        url = ebay_sold_url("Kennen, Storm of Shuriken", "Riftbound", "ebay.co.uk")
+        self.assertTrue(url.startswith("https://www.ebay.co.uk/sch/i.html?_nkw=Kennen%2C+Storm+of+Shuriken+riftbound"))
+        self.assertIn("LH_Sold=1", url)
+        self.assertIn("LH_Complete=1", url)
+        self.assertIn("_nkw=Charizard&", ebay_sold_url("Charizard", "Pokémon", "ebay.com"))
+
+
 class MarketSnapshotTest(unittest.TestCase):
     def test_cheapest_regular_printing(self):
         def product(pid, name, number="1"):

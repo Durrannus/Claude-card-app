@@ -1,6 +1,7 @@
 """The "Market" tab: sell/hold/buy signals from price history and meta trends."""
 
 import tkinter as tk
+import webbrowser
 from datetime import date
 from tkinter import messagebox, ttk
 
@@ -11,6 +12,8 @@ from .meta import MetaTracker
 
 PRICE_COLOR = "#b8862a"  # validated series colours for the dark chart surface
 PLAY_COLOR = "#1f9aaa"
+
+EBAY_SITES = ["ebay.com", "ebay.co.uk", "ebay.com.au", "ebay.ca", "ebay.de", "ebay.fr", "ebay.it", "ebay.es"]
 
 MY_CARDS, OPPORTUNITIES, EVERYTHING = "mine", "opportunities", "all"
 WINDOWS = {"Last 7 days": 7, "Last 14 days": 14, "Last 30 days": 30}
@@ -29,20 +32,101 @@ TAG_COLORS = {"sell": theme.GOLD, "buy": theme.GOOD, "rising": "#4fd1c5", "watch
               "hold": theme.TEXT, "none": theme.MUTED}
 
 COLUMNS = [
-    ("signal", "Signal", 145, "w"),
-    ("name", "Card", 160, "w"),
-    ("owned", "Own", 50, "center"),
+    ("signal", "Signal", 150, "w"),
+    ("name", "Card", 150, "w"),
+    ("owned", "Own", 56, "center"),
     ("value", "Value", 70, "e"),
-    ("paid", "Paid", 65, "e"),
+    ("ebay", "eBay sold", 96, "e"),
     ("profit", "Profit", 75, "e"),
-    ("price", "Price move", 108, "center"),
-    ("play", "Play rate", 92, "center"),
-    ("meta", "Meta move", 102, "center"),
+    ("price", "Price move", 106, "center"),
+    ("play", "Play rate", 90, "center"),
+    ("meta", "Meta move", 106, "center"),
 ]
 
 
 def _money(v: float) -> str:
     return f"${v:,.2f}"
+
+
+class SoldPriceDialog(tk.Toplevel):
+    """Log sold prices you've seen (e.g. on eBay) for one card, or remove them."""
+
+    def __init__(self, parent, db: CardDatabase, name: str):
+        super().__init__(parent)
+        self.title("Sold prices")
+        self.transient(parent)
+        self.resizable(False, False)
+        self.db, self.name = db, name
+        self.changed = False
+
+        form = ttk.Frame(self, padding=20)
+        form.pack(fill="both", expand=True)
+        ttk.Label(form, text=name, style="Section.TLabel", font=theme.font(14, "bold")).grid(
+            row=0, column=0, columnspan=3, sticky="w")
+        ttk.Label(form, style="Muted.TLabel", wraplength=380, justify="left", text=(
+            "Add each sold price you see, one at a time: the price one copy sold for, in the same currency "
+            "as your other prices.")).grid(row=1, column=0, columnspan=3, sticky="w", pady=(4, 12))
+
+        self.price = tk.StringVar()
+        self.day = tk.StringVar(value=date.today().isoformat())
+        self.note = tk.StringVar()
+        for row, (label, var, width, hint) in enumerate([
+            ("Sold for", self.price, 12, "e.g. 4.50"),
+            ("Date sold", self.day, 12, "YYYY-MM-DD"),
+            ("Note", self.note, 30, "optional, e.g. near mint, foil"),
+        ], start=2):
+            ttk.Label(form, text=label, style="Muted.TLabel").grid(row=row, column=0, sticky="w", pady=4, padx=(0, 12))
+            entry = ttk.Entry(form, textvariable=var, width=width)
+            entry.grid(row=row, column=1, sticky="w")
+            ttk.Label(form, text=hint, style="Muted.TLabel", font=theme.font(9)).grid(row=row, column=2, sticky="w",
+                                                                                       padx=(10, 0))
+            if row == 2:
+                entry.focus_set()
+        ttk.Button(form, text="Add price", style="Accent.TButton", command=self._add).grid(
+            row=5, column=1, sticky="w", pady=(8, 14))
+
+        ttk.Label(form, text="Logged so far", style="Section.TLabel").grid(row=6, column=0, columnspan=3, sticky="w")
+        self.listbox = tk.Listbox(form, height=7, width=52, background=theme.RAISED, foreground=theme.TEXT,
+                                  selectbackground=theme.SELECT, highlightthickness=0, relief="flat",
+                                  font=theme.font(10), activestyle="none")
+        self.listbox.grid(row=7, column=0, columnspan=3, sticky="ew", pady=(4, 6))
+        buttons = ttk.Frame(form)
+        buttons.grid(row=8, column=0, columnspan=3, sticky="ew")
+        ttk.Button(buttons, text="Remove selected", style="Danger.TButton", command=self._remove).pack(side="left")
+        ttk.Button(buttons, text="Done", command=self.destroy).pack(side="right")
+        self.bind("<Return>", lambda e: self._add())
+        self.bind("<Escape>", lambda e: self.destroy())
+        self._load()
+        self.grab_set()
+        self.wait_window()
+
+    def _load(self) -> None:
+        self._rows = self.db.sold_prices(self.name)
+        self.listbox.delete(0, "end")
+        for r in self._rows:
+            self.listbox.insert("end", f"{r['day']}    {_money(r['price'])}    {r['note']}")
+        if not self._rows:
+            self.listbox.insert("end", "Nothing logged yet.")
+
+    def _add(self) -> None:
+        try:
+            price = float(self.price.get().replace("$", "").replace("£", "").replace("€", "").replace(",", ""))
+            day = date.fromisoformat(self.day.get().strip()).isoformat()
+            self.db.add_sold_price(self.name, price, day, self.note.get())
+        except ValueError:
+            messagebox.showerror("Sold price", "Enter a price above zero and a date like 2026-09-27.", parent=self)
+            return
+        self.changed = True
+        self.price.set("")
+        self.note.set("")
+        self._load()
+
+    def _remove(self) -> None:
+        sel = self.listbox.curselection()
+        if sel and self._rows:
+            self.db.delete_sold_price(self._rows[sel[0]]["id"])
+            self.changed = True
+            self._load()
 
 
 class MarketTab(ttk.Frame):
@@ -112,17 +196,39 @@ class MarketTab(ttk.Frame):
         body = ttk.Frame(self)
         body.pack(fill="both", expand=True)
 
-        details = ttk.Frame(body, style="Card.TFrame", padding=14, width=350)
+        details = ttk.Frame(body, style="Card.TFrame", padding=14, width=336)
         details.pack(side="right", fill="y", padx=(12, 0))
         details.pack_propagate(False)
         self._build_details(details)
 
-        table = ttk.Frame(body, style="Card.TFrame", padding=1)
-        table.pack(side="left", fill="both", expand=True)
+        left = ttk.Frame(body)
+        left.pack(side="left", fill="both", expand=True)
+        # Charts sit under the table, side by side, where there's width to spare.
+        charts = ttk.Frame(left)
+        charts.pack(side="bottom", fill="x", pady=(12, 0))
+        charts.columnconfigure((0, 1), weight=1, uniform="chart")
+        for col, (title, subtitle, attr, color, fmt, zero) in enumerate([
+            ("Price", "per copy", "price_chart", PRICE_COLOR, _money, False),
+            ("Play rate", "% of decklists, weekly", "play_chart", PLAY_COLOR, lambda v: f"{v:.0%}", True),
+        ]):
+            card = ttk.Frame(charts, style="Card.TFrame", padding=(12, 8))
+            card.grid(row=0, column=col, sticky="nsew", padx=(0 if col == 0 else 12, 0))
+            heading = ttk.Frame(card, style="Header.TFrame")
+            heading.pack(anchor="w")
+            ttk.Label(heading, text=title, style="CardSection.TLabel").pack(side="left")
+            ttk.Label(heading, text="  " + subtitle, style="CardMuted.TLabel").pack(side="left")
+            chart = LineChart(card, color, fmt=fmt, zero_based=zero, height=120)
+            chart.pack(fill="both", expand=True, pady=(4, 0))
+            setattr(self, attr, chart)
+
+        table = ttk.Frame(left, style="Card.TFrame", padding=1)
+        table.pack(side="top", fill="both", expand=True)
         self.tree = ttk.Treeview(table, columns=[c[0] for c in COLUMNS], show="headings", selectmode="extended")
         for key, heading, width, anchor in COLUMNS:
             self.tree.heading(key, text=heading)
-            self.tree.column(key, width=width, anchor=anchor, minwidth=40)
+            # Only the card name gives up width when space is short.
+            self.tree.column(key, width=width, anchor=anchor, minwidth=40 if key == "name" else width,
+                             stretch=key == "name")
         theme.stripe(self.tree)
         for tag, color in TAG_COLORS.items():
             self.tree.tag_configure(tag, foreground=color)
@@ -137,31 +243,28 @@ class MarketTab(ttk.Frame):
         self.d_signal = tk.StringVar()
         self.d_reason = tk.StringVar()
         self.d_facts = tk.StringVar()
-        ttk.Label(panel, textvariable=self.d_name, style="CardName.TLabel", wraplength=320).pack(anchor="w")
+        ttk.Label(panel, textvariable=self.d_name, style="CardName.TLabel", wraplength=306).pack(anchor="w")
         self.signal_label = tk.Label(panel, textvariable=self.d_signal, background=theme.SURFACE,
                                      font=theme.font(13, "bold"), anchor="w")
         self.signal_label.pack(anchor="w", pady=(4, 2))
-        ttk.Label(panel, textvariable=self.d_reason, style="Card.TLabel", wraplength=320,
+        ttk.Label(panel, textvariable=self.d_reason, style="Card.TLabel", wraplength=306,
                   justify="left").pack(anchor="w")
-        ttk.Label(panel, textvariable=self.d_facts, style="CardMuted.TLabel", wraplength=320,
-                  justify="left").pack(anchor="w", pady=(6, 8))
+        ttk.Label(panel, textvariable=self.d_facts, style="CardMuted.TLabel", wraplength=306,
+                  justify="left").pack(anchor="w", pady=(6, 4))
 
-        # The two charts split the remaining height evenly (grid shrinks rows
-        # by weight), so both stay visible on laptop screens.
-        charts = ttk.Frame(panel, style="Header.TFrame")
-        charts.pack(fill="both", expand=True)
-        charts.columnconfigure(0, weight=1)
-        ttk.Label(charts, text="Price", style="CardSection.TLabel").grid(row=0, column=0, sticky="w")
-        self.price_chart = LineChart(charts, PRICE_COLOR, fmt=_money, height=60)
-        self.price_chart.grid(row=1, column=0, sticky="nsew", pady=(2, 6))
-        heading = ttk.Frame(charts, style="Header.TFrame")
-        heading.grid(row=2, column=0, sticky="w")
-        ttk.Label(heading, text="Play rate", style="CardSection.TLabel").pack(side="left")
-        ttk.Label(heading, text="  % of decklists, weekly", style="CardMuted.TLabel").pack(side="left")
-        self.play_chart = LineChart(charts, PLAY_COLOR, fmt=lambda v: f"{v:.0%}", zero_based=True, height=60)
-        self.play_chart.grid(row=3, column=0, sticky="nsew", pady=(2, 0))
-        charts.rowconfigure(1, weight=1, uniform="chart")
-        charts.rowconfigure(3, weight=1, uniform="chart")
+        self.d_ebay = tk.StringVar()
+        ttk.Label(panel, textvariable=self.d_ebay, style="Card.TLabel", wraplength=306,
+                  justify="left").pack(anchor="w")
+        ebay = ttk.Frame(panel, style="Header.TFrame")
+        ebay.pack(anchor="w", pady=(6, 10))
+        self.ebay_button = ttk.Button(ebay, text="eBay ↗", style="Small.TButton", command=self.open_ebay)
+        self.ebay_button.pack(side="left")
+        self.log_button = ttk.Button(ebay, text="Log sold price", style="Small.TButton", command=self.log_sold)
+        self.log_button.pack(side="left", padx=(6, 6))
+        self.site_var = tk.StringVar(value=self.db.get_setting("ebay_site", "ebay.com"))
+        site = ttk.Combobox(ebay, textvariable=self.site_var, values=EBAY_SITES, state="readonly", width=11)
+        site.pack(side="left")
+        site.bind("<<ComboboxSelected>>", lambda _: self.db.set_setting("ebay_site", self.site_var.get()))
 
     # --- display -------------------------------------------------------------
 
@@ -179,13 +282,14 @@ class MarketTab(ttk.Frame):
         for i, (idx, r) in enumerate(shown):
             trend_known = r.trend is not None and r.trend.enough_data
             profit = r.profit
+            sold = market.recent_sold(self.db.sold_prices(r.name))
             self.tree.insert("", "end", iid=str(idx),
                              tags=(SIGNAL_TAGS[r.signal], theme.row_tag(i)), values=[
                 r.signal,
                 r.name,
                 r.owned or "",
                 _money(r.value) if r.value else "",
-                _money(r.paid) if r.paid else "",
+                (_money(sold[0]) + (f" ({sold[1]})" if sold[1] > 1 else "")) if sold else "",
                 (("+" if profit >= 0 else "−") + _money(abs(profit))) if profit is not None else "",
                 f"{r.price_change.fraction:+.0%} ({r.price_change.days}d)" if r.price_change else "",
                 f"{r.trend.recent_share:.0%}" if r.trend else "",
@@ -219,6 +323,9 @@ class MarketTab(ttk.Frame):
             self.d_signal.set("")
             self.d_reason.set("Pick a row to see why it got its signal, with its price and play-rate history.")
             self.d_facts.set("")
+            self.d_ebay.set("")
+            self.ebay_button.state(["disabled"])
+            self.log_button.state(["disabled"])
             self.price_chart.set_data([])
             self.play_chart.set_data([])
             return
@@ -238,6 +345,24 @@ class MarketTab(ttk.Frame):
             facts.append(f"paid {_money(r.paid)}")
         self.d_facts.set(" · ".join(facts))
 
+        self.ebay_button.state(["!disabled"])
+        self.log_button.state(["!disabled"])
+        sold = market.recent_sold(self.db.sold_prices(r.name))
+        if not sold:
+            self.d_ebay.set("eBay sold: none logged. Open eBay's sold listings and log a few prices.")
+        else:
+            avg, count, newest = sold
+            text = (f"eBay sold: {_money(avg)}" + (f" (average of {count})" if count > 1 else "")
+                    + f", latest {_friendly_day(newest).lower()}.")
+            if r.value:
+                diff = (avg - r.value) / r.value
+                if abs(diff) >= 0.05:
+                    text += (f" {abs(diff):.0%} {'above' if diff > 0 else 'below'} TCGplayer"
+                             + (", so eBay may pay more." if diff > 0 else "."))
+                else:
+                    text += " About the same as TCGplayer."
+            self.d_ebay.set(text)
+
         history = self.db.price_history(card_id=r.card.id) if r.card else []
         if len(history) < 2:
             history = self.db.price_history(name=r.name) or history
@@ -250,6 +375,20 @@ class MarketTab(ttk.Frame):
                                  "Not enough dated decklists yet to chart play rate.")
 
     # --- actions -------------------------------------------------------------
+
+    def _selected_row(self) -> market.MarketRow | None:
+        sel = self.tree.selection()
+        return self.rows[int(sel[0])] if sel else None
+
+    def open_ebay(self) -> None:
+        r = self._selected_row()
+        if r:
+            webbrowser.open(market.ebay_sold_url(r.name, r.card.game if r.card else "Riftbound", self.site_var.get()))
+
+    def log_sold(self) -> None:
+        r = self._selected_row()
+        if r and SoldPriceDialog(self.winfo_toplevel(), self.db, r.name).changed:
+            self.refresh()
 
     def update_all_prices(self, silent: bool = False) -> None:
         """Refresh every collection and wishlist price, and save today's

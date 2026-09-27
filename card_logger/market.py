@@ -15,6 +15,7 @@ starting point for research, not a guarantee.
 import math
 from dataclasses import dataclass
 from datetime import date, timedelta
+from urllib.parse import quote_plus
 
 from .db import Card, CardDatabase, name_key
 from .meta import LEGEND, RUNES, MetaTracker
@@ -207,6 +208,22 @@ def price_change(history: list[tuple[str, float]], days: int) -> PriceChange | N
     if span <= 0 or start_price <= 0:
         return None
     return PriceChange(start=start_price, end=last_price, days=span)
+
+
+def recent_sold(sold: list[dict], days: int = 30, today: date | None = None) -> tuple[float, int, str] | None:
+    """(average, count, newest day) of logged sold prices from the last `days`
+    days; if there are none that recent, the newest one on its own."""
+    if not sold:
+        return None
+    cutoff = ((today or date.today()) - timedelta(days=days)).isoformat()
+    recent = [s for s in sold if s["day"] >= cutoff] or sold[:1]
+    return sum(s["price"] for s in recent) / len(recent), len(recent), recent[0]["day"]
+
+
+def ebay_sold_url(name: str, game: str, site: str) -> str:
+    """eBay search for completed, sold listings of a card, newest first."""
+    query = name if (game and "riftbound" not in game.lower()) else f"{name} riftbound"
+    return f"https://www.{site}/sch/i.html?_nkw={quote_plus(query)}&LH_Sold=1&LH_Complete=1&_sop=13"
 
 
 # --- signals -----------------------------------------------------------------

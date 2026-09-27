@@ -92,7 +92,7 @@ def apply_theme(root: tk.Tk) -> None:
               foreground=[("disabled", "#2d261a")],
               bordercolor=[("active", GOLD_HOVER)],
               lightcolor=[("active", GOLD_HOVER)], darkcolor=[("active", GOLD_HOVER)])
-    style.configure("Small.TButton", padding=(8, 5))
+    style.configure("Small.TButton", padding=(8, 5), width=0)  # width 0 = fit the text
     style.configure("Danger.TButton", foreground="#ffb4b0")
     style.map("Danger.TButton", background=[("pressed", "#5a2220"), ("active", "#4a2322")],
               bordercolor=[("active", DANGER)])

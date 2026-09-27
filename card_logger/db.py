@@ -116,6 +116,16 @@ class CardDatabase:
             CREATE INDEX IF NOT EXISTS price_history_card ON price_history(card_id, day);
             CREATE INDEX IF NOT EXISTS price_history_name ON price_history(name_key, day);
             CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+            -- Sold prices you've looked up yourself, e.g. from eBay sold listings.
+            CREATE TABLE IF NOT EXISTS sold_prices (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name_key TEXT NOT NULL,
+                name TEXT NOT NULL,
+                day TEXT NOT NULL,
+                price REAL NOT NULL,
+                note TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS sold_prices_name ON sold_prices(name_key, day);
             """
         )
         self.conn.commit()
@@ -188,6 +198,30 @@ class CardDatabase:
     def last_price_update(self) -> str:
         row = self.conn.execute("SELECT MAX(day) AS day FROM price_history").fetchone()
         return row["day"] or ""
+
+    # --- sold prices you log yourself -------------------------------------
+
+    def add_sold_price(self, name: str, price: float, day: str | None = None, note: str = "") -> int:
+        if price <= 0:
+            raise ValueError("Sold price must be above zero")
+        cur = self.conn.execute(
+            "INSERT INTO sold_prices (name_key, name, day, price, note) VALUES (?, ?, ?, ?, ?)",
+            (name_key(name), name, day or date.today().isoformat(), price, note.strip()),
+        )
+        self.conn.commit()
+        return cur.lastrowid
+
+    def sold_prices(self, name: str) -> list[dict]:
+        """Logged sold prices for a card (any spelling), newest first."""
+        rows = self.conn.execute(
+            "SELECT id, day, price, note FROM sold_prices WHERE name_key = ? ORDER BY day DESC, id DESC",
+            (name_key(name),),
+        )
+        return [dict(r) for r in rows]
+
+    def delete_sold_price(self, sold_id: int) -> None:
+        self.conn.execute("DELETE FROM sold_prices WHERE id = ?", (sold_id,))
+        self.conn.commit()
 
     # --- settings ------------------------------------------------------------
 
