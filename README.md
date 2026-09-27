@@ -171,6 +171,21 @@ Decklists can be in any of the common text formats: headings such as
 The meta sites (riftDecks, riftbound.gg, Piltover Archive) don't offer a
 public data feed, which is why those decklists are added by hand.
 
+### Checking the live connections
+
+Prices and tournament imports come from online services. To check they all
+work on your computer, double-click `check_connections.py`, or run
+
+```
+python -m card_logger --check
+```
+
+It tries each service, shows PASS or FAIL with what it found (for example a
+real price, or the first decklist of a recent tournament), and saves a report
+to `.card_logger/connection-check.txt` in your home folder. If anything fails
+for a reason other than your internet connection, that report shows exactly
+what the service sent back, which is what's needed to fix it.
+
 ### Tips
 
 - Double-click a row to edit it; press **Delete** to remove selected rows.
