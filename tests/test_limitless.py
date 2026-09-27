@@ -25,7 +25,8 @@ KENNEN = {
 }
 STANDINGS = {
     "t1": [
-        {"player": "sam", "name": "Sam", "placing": 1, "decklist": KENNEN, "deck": {"name": "Kennen"}},
+        {"player": "sam", "name": "Sam", "placing": 1, "decklist": KENNEN, "deck": {"name": "Kennen"},
+         "record": {"wins": 5, "losses": 1, "ties": 0}},
         {"player": "ana", "name": "Ana", "placing": 2, "decklist": None, "deck": {"name": "Master Yi"}},
         # A flat list that names its own sections, and no legend section.
         {"player": "lee", "name": "Lee", "placing": 3, "deck": {"name": "Irelia, Blade Dancer"},
@@ -71,6 +72,8 @@ class LimitlessTest(unittest.TestCase):
         self.assertEqual([d.player for d in t1.decks], ["Sam", "Lee"])  # Ana's list isn't public
         sam = t1.decks[0]
         self.assertEqual((sam.legend, sam.placement, sam.event), ("Kennen, Heart of the Tempest", 1, "Weekly #12"))
+        self.assertEqual((sam.players, sam.wins, sam.losses, sam.ties), (24, 5, 1, 0))
+        self.assertIsNone(t1.decks[1].wins)  # no record given
         self.assertEqual({(c.section, c.name, c.quantity) for c in sam.cards}, {
             (LEGEND, "Kennen, Heart of the Tempest", 1), (CHAMPION, "Kennen, Storm of Shuriken", 1),
             (MAIN, "Gust Monk", 3), (MAIN, "Zephyr Sage", 2), (RUNES, "Chaos Rune", 12),
@@ -96,6 +99,8 @@ class LimitlessTest(unittest.TestCase):
         self.assertEqual(limitless.checked_tournaments(meta), {"t1", "t2"})
         usage = {u.name: u for u in meta.card_usage()}
         self.assertEqual(usage["Gust Monk"].decks, 3)
+        stored = meta.get_deck(next(d.id for d in meta.decks() if d.player == "Sam"))
+        self.assertEqual((stored.players, stored.wins, stored.losses), (24, 5, 1))
         db.close()
 
     def test_bad_entries_ignored(self):

@@ -110,8 +110,13 @@ def standing_to_deck(event: Event, standing: dict) -> Deck | None:
         date=event.date,
         notes=f"Imported from Limitless · {event.players} players",
         source_id=f"{SOURCE}:{event.tournament_id}:{player}",
+        players=event.players or None,
         cards=cards,
     )
+    record = standing.get("record") or {}
+    if isinstance(record, dict) and isinstance(record.get("wins"), int) and isinstance(record.get("losses"), int):
+        deck.wins, deck.losses = record["wins"], record["losses"]
+        deck.ties = record.get("ties") if isinstance(record.get("ties"), int) else 0
     legends = [c.name for c in cards if c.section == LEGEND]
     deck.legend = legends[0] if legends else deck.name
     return deck

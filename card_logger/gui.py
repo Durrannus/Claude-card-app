@@ -673,7 +673,8 @@ def _sort_key(value):
 
 
 def build_window(root: tk.Tk, db: CardDatabase):
-    """Lay out the main window; returns the notebook and its three tabs."""
+    """Lay out the main window; returns the notebook and its four tabs."""
+    from .insight_gui import InsightTab
     from .market_gui import MarketTab
     from .meta_gui import MetaTrackerTab
 
@@ -694,9 +695,27 @@ def build_window(root: tk.Tk, db: CardDatabase):
     tabs.add(collection, text="  Collection  ")
     tabs.add(meta, text="  Meta tracker  ")
     tabs.add(market_tab, text="  Market  ")
+
+    def get_latest() -> None:
+        """Import new tournaments and update prices, then refresh the insights."""
+        meta.import_tournaments(silent=True)
+        market_tab.update_all_prices(silent=True)
+        insight_tab.status.set("Getting the latest tournaments and prices…")
+
+        def wait():
+            if meta.importing or market_tab.busy:
+                root.after(500, wait)
+                return
+            insight_tab.refresh()
+            insight_tab.status.set(f"Updated. {meta.status.get()} · {market_tab.status.get()}")
+        root.after(500, wait)
+
+    insight_tab = InsightTab(tabs, db, get_latest=get_latest,
+                             on_data_changed=lambda: (collection.refresh(), market_tab.refresh()))
+    tabs.add(insight_tab, text="  Future insight  ")
     # Each tab shows data the others change, so refresh the one being opened.
     tabs.bind("<<NotebookTabChanged>>", lambda _: tabs.nametowidget(tabs.select()).refresh())
-    return tabs, collection, meta, market_tab
+    return tabs, collection, meta, market_tab, insight_tab
 
 
 def main(db_path=None) -> None:

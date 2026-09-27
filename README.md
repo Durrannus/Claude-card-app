@@ -15,6 +15,8 @@ lookups need the internet.
 
 ![Market tab](docs/screenshot-market.png)
 
+![Future insight tab](docs/screenshot-insight.png)
+
 ## What it does
 
 - Add, edit and delete cards: name, game, set, card number, rarity,
@@ -30,6 +32,8 @@ lookups need the internet.
   Pokémon and Yu-Gi-Oh! cards (see below)
 - **Market signals:** sell, hold and buy suggestions from each card's price
   history and meta trend, with charts and your profit (see below)
+- **Future insight:** early warning signs of cards likely to become popular,
+  before the rise shows up in play rates (see below)
 - **Meta tracker:** save tournament decklists and see which cards and
   legends are played most, how many copies decks run, and which of those
   cards you're missing (see below)
@@ -240,6 +244,42 @@ Signals are only as good as the data behind them:
 - **Decklists:** turn on the automatic Limitless import in the Meta
   tracker tab, and add other tournament results by hand, with their dates. Trends compare recent decklists with older ones, so a
   steady flow of dated lists is what makes early detection work.
+
+## Future insight: cards that could be next
+
+Nobody can know the future meta for certain. This tab looks for the
+patterns that tend to come *before* a card takes off, and ranks cards by a
+**watch score** (0–100): the more signs, and the stronger they are, the
+higher the score. Select a card to see each sign explained with its numbers.
+
+| Sign | What it means | Why it matters |
+| --- | --- | --- |
+| Top finishers | Decks in the top quarter of events play it much more than the rest | Players copy winning lists |
+| Wins more | Decks with it win more of their games than decks without it | Strong but under-played cards get picked up |
+| Climbing | Its play rate has been rising week on week from a low base | Early adoption, before it's a clear trend |
+| Rising legend | It's in most lists of a legend whose meta share is growing | The card rises with its legend |
+| Spreading | More legends have started playing it | Cards that fit many decks become staples |
+| Price first | Its price is rising faster than its play rate | Buyers may be ahead of the tournament results |
+| New | It showed up in decklists for the first time in the last two weeks | Something new is being tried |
+| Unplayed, price up | Not in any decklist, but the price is up 25%+ in two weeks | The market may be betting on it early |
+
+Cards already in 60%+ of decks are left out, since they're already the meta.
+Signs only count when the difference is big enough not to be chance, and
+nothing is judged until there are at least 20 decklists in the period.
+
+**Legends on the move** shows which legends are gaining or losing meta share,
+comparing the second half of the period with the first.
+
+**Get latest data** imports new tournaments from Limitless and updates all
+prices in one click. **Add to wishlist** and **eBay ↗** help you act on a
+card.
+
+The win-rate sign needs match records, and the top-finishers sign needs
+placings. Both come with tournaments imported from Limitless. Decklists you
+add by hand count towards top finishers when you enter a placement.
+
+These are signs to research, not predictions, and they can be wrong. Check
+spoilers, ban announcements and recent sales before you buy.
 
 ## Where your data is stored
 

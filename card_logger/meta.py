@@ -73,6 +73,10 @@ class Deck:
     date: str = ""
     notes: str = ""
     source_id: str = ""  # where an imported deck came from, e.g. "limitless:<tournament>:<player>"
+    players: int | None = None  # size of the event
+    wins: int | None = None     # match record, when known
+    losses: int | None = None
+    ties: int | None = None
     cards: list[DeckCard] = field(default_factory=list)
     id: int | None = None
 
@@ -206,6 +210,9 @@ class MetaTracker:
         columns = {r["name"] for r in self.conn.execute("PRAGMA table_info(decks)")}
         if "source_id" not in columns:
             self.conn.execute("ALTER TABLE decks ADD COLUMN source_id TEXT NOT NULL DEFAULT ''")
+        for column in ("players", "wins", "losses", "ties"):
+            if column not in columns:
+                self.conn.execute(f"ALTER TABLE decks ADD COLUMN {column} INTEGER")
         self.conn.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS decks_source ON decks(source_id) WHERE source_id != ''"
         )
@@ -225,9 +232,10 @@ class MetaTracker:
         if not deck.date:
             deck.date = date.today().isoformat()
         cur = self.conn.execute(
-            "INSERT INTO decks (name, legend, player, event, placement, date, notes, source_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (deck.name, deck.legend, deck.player, deck.event, deck.placement, deck.date, deck.notes, deck.source_id),
+            "INSERT INTO decks (name, legend, player, event, placement, date, notes, source_id, "
+            "players, wins, losses, ties) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (deck.name, deck.legend, deck.player, deck.event, deck.placement, deck.date, deck.notes, deck.source_id,
+             deck.players, deck.wins, deck.losses, deck.ties),
         )
         deck.id = cur.lastrowid
         self.conn.executemany(
