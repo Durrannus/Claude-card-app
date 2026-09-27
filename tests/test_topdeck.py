@@ -18,10 +18,11 @@ RESPONSE = [
      "format": "Constructed", "topCut": 32, "standings": [
          {"standing": 1, "name": "Sam", "id": "p1", "wins": 9, "losses": 1, "draws": 0,
           "leader": "Kennen, Heart of the Tempest",
-          "deckObj": {"Legend": {"Kennen, Heart of the Tempest": 1},
-                      "Main Deck": {"Gust Monk": 3, "Zephyr Sage": {"count": 2, "id": "OGN-044"}},
+          "deckObj": {"Legend": {"Kennen, Heart of the Tempest": {"id": "OGN-247", "count": 1}},
+                      "Mainboard": {"Gust Monk": {"id": "OGN-051", "count": 3},
+                                    "Zephyr Sage": {"count": 2, "id": "OGN-044"}},
                       "Runes": {"Chaos Rune": 12}, "Battlefields": {"Minefield": 1}}},
-         {"standing": 2, "name": "Ana", "id": "p2", "wins": 8, "losses": 2, "draws": 0,
+         {"name": "Ana", "id": "p2", "wins": 8, "losses": 2, "draws": 0,   # real API: no "standing" field
           "leader": "Master Yi, Wuju Bladesman",
           "decklist": "~~Legend~~\n1 Master Yi, Wuju Bladesman\n~~Main Deck~~\n3 Gust Monk\n3 Wind Wall"},
          {"standing": 3, "name": "Lee", "id": "p3", "wins": 7, "losses": 3, "draws": 0},   # no list
@@ -49,7 +50,9 @@ class TopDeckTest(unittest.TestCase):
         _, sent = self.run_fetch()
         body, key = sent[0]
         self.assertEqual(key, "key123")
-        self.assertEqual((body["game"], body["last"], body["participantMin"]), ("Riftbound", 30, 8))
+        self.assertEqual((body["game"], body["format"], body["last"], body["participantMin"]),
+                         ("Riftbound", "Constructed", 30, 8))
+        self.assertIn("id", body["columns"])
         self.assertIn("decklist", body["columns"])
 
     def test_decks(self):
@@ -64,6 +67,7 @@ class TopDeckTest(unittest.TestCase):
             (LEGEND, "Kennen, Heart of the Tempest", 1), (MAIN, "Gust Monk", 3), (MAIN, "Zephyr Sage", 2),
             (RUNES, "Chaos Rune", 12), (BATTLEFIELDS, "Minefield", 1)})
         self.assertEqual(ana.legend, "Master Yi, Wuju Bladesman")  # from the text decklist
+        self.assertEqual(ana.placement, 2)  # from its position in the standings
         self.assertEqual({(c.section, c.name) for c in ana.cards},
                          {(LEGEND, "Master Yi, Wuju Bladesman"), (MAIN, "Gust Monk"), (MAIN, "Wind Wall")})
         self.assertIn("TopDeck.gg", sam.notes)

@@ -140,6 +140,7 @@ It needs a free API key:
 2. Sign in and create a key.
 3. Paste it into **API key**. It's saved only on your computer.
 
+It imports Constructed events (the standard competitive format).
 **Minimum players** skips small events; raise it to focus on bigger,
 more competitive ones. Decklists appear once an event has finished, and only
 for players whose list the organiser made public. TopDeck.gg asks apps to

@@ -25,6 +25,7 @@ from .meta import _SECTION_NAMES, LEGEND, MAIN, Deck, DeckCard, MetaTracker, car
 API = "https://topdeck.gg/api/v2/tournaments"
 KEY_PAGE = "https://topdeck.gg/developers"
 GAME = "Riftbound"
+FORMAT = "Constructed"  # the API requires a format along with the game
 SOURCE = "topdeck"
 ATTRIBUTION = "Tournament data provided by TopDeck.gg"
 RETRIES = 2
@@ -90,7 +91,9 @@ def cards_from_deckobj(deck_obj) -> list[DeckCard]:
     return cards
 
 
-def standing_to_deck(standing: dict, tournament: dict, day: str, players: int) -> Deck | None:
+def standing_to_deck(standing: dict, tournament: dict, day: str, players: int, position: int) -> Deck | None:
+    """`position` is the player's place in the standings list, which comes in
+    finishing order; the API doesn't return a separate placing column."""
     cards = cards_from_deckobj(standing.get("deckObj"))
     text = standing.get("decklist")
     if not cards and isinstance(text, str) and text.strip() and not text.strip().startswith("http"):
@@ -107,7 +110,7 @@ def standing_to_deck(standing: dict, tournament: dict, day: str, players: int) -
     return Deck(
         name="", legend=legend, player=str(standing.get("name") or ""),
         event=str(tournament.get("tournamentName") or "TopDeck.gg tournament"),
-        placement=number("standing"), date=day, players=players or None,
+        placement=number("standing") or position, date=day, players=players or None,
         wins=number("wins"), losses=number("losses"), ties=number("draws"),
         notes=f"{ATTRIBUTION} · {players} players",
         source_id=f"{SOURCE}:{tournament.get('TID')}:{standing.get('id') or standing.get('name')}",
@@ -129,8 +132,8 @@ def fetch(api_key: str, days: int, min_players: int, known_sources: set[str], po
     today = today or datetime.now(timezone.utc).date()
     if report:
         report("Downloading tournaments from TopDeck.gg…")
-    body = {"game": GAME, "last": days, "participantMin": min_players,
-            "columns": ["name", "decklist", "wins", "losses", "draws"]}
+    body = {"game": GAME, "format": FORMAT, "last": days, "participantMin": min_players,
+            "columns": ["name", "id", "decklist", "wins", "losses", "draws"]}
     data = (post or _post)(body, api_key)
     if not isinstance(data, list):
         raise TopDeckError("TopDeck.gg sent an unexpected response; its format may have changed.")
@@ -146,8 +149,8 @@ def fetch(api_key: str, days: int, min_players: int, known_sources: set[str], po
             continue  # may still be running; decklists appear once it has ended
         standings = [s for s in (t.get("standings") or []) if isinstance(s, dict)]
         result.tournaments += 1
-        for s in standings:
-            deck = standing_to_deck(s, t, day, len(standings))
+        for position, s in enumerate(standings, start=1):
+            deck = standing_to_deck(s, t, day, len(standings), position)
             if deck is None:
                 result.without_lists += 1
             elif deck.source_id not in known_sources:

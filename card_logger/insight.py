@@ -234,10 +234,12 @@ def analyse(db: CardDatabase, meta: MetaTracker, weeks: int = 6, today: date | N
         if g1 >= 40 and g2 >= 40:
             c.win_rate = w1 / g1
             diff = w1 / g1 - w2 / g2
-            if diff >= 0.03 and two_prop_z(w1, g1, w2, g2) >= Z_NEEDED:
-                c.signs.append(Sign(WINRATE, min(30, 10 + diff * 300),
-                                    f"Decks with it win {w1 / g1:.0%} of their games vs {w2 / g2:.0%} without "
-                                    f"({g1} and {g2} games). Strong cards get picked up."))
+            z = two_prop_z(w1, g1, w2, g2)
+            if diff >= 0.03 and z >= Z_NEEDED:
+                # Bigger edges and stronger evidence (more matches) both score higher.
+                c.signs.append(Sign(WINRATE, min(30, 4 + diff * 100 + 3 * min(z, 5)),
+                                    f"Decks with it win {w1 / g1:.0%} of their matches vs {w2 / g2:.0%} without "
+                                    f"({g1:,} and {g2:,} matches). Strong cards get picked up."))
 
         weekly = [(w, sum(1 for i in playing if week_of[i] == w) / week_sizes[w])
                   for w in range(weeks) if week_sizes[w] >= 3]
