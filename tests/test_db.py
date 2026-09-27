@@ -196,5 +196,32 @@ class UpgradeTest(unittest.TestCase):
             db.close()
 
 
+class SoldPriceTest(unittest.TestCase):
+    def test_sold_prices_per_printing(self):
+        db = CardDatabase(":memory:")
+        db.add_sold_price("Jinx - Rebel", 3.0, day="2026-09-20")
+        db.add_sold_price("Jinx - Rebel", 5.0, day="2026-09-21", code="OGN-202a")
+        db.add_sold_price("Jinx, Rebel", 7.0, day="2026-09-22", code="OGN-202A")
+        self.assertEqual(len(db.sold_prices("Jinx - Rebel")), 3)  # every printing
+        self.assertEqual([r["price"] for r in db.sold_prices("Jinx - Rebel", "ogn-202a")], [7.0, 5.0])
+        self.assertEqual([r["price"] for r in db.sold_prices("Jinx - Rebel", "")], [3.0])
+        self.assertEqual(list(db.sold_prices_by_code()), ["OGN-202A"])
+        self.assertEqual(len(db.sold_prices_by_code()["OGN-202A"]), 2)
+        db.close()
+
+    def test_adds_code_to_older_sold_prices_table(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "cards.db"
+            conn = sqlite3.connect(path)
+            conn.execute("CREATE TABLE sold_prices (id INTEGER PRIMARY KEY AUTOINCREMENT, name_key TEXT NOT NULL, "
+                         "name TEXT NOT NULL, day TEXT NOT NULL, price REAL NOT NULL, note TEXT NOT NULL DEFAULT '')")
+            conn.execute("INSERT INTO sold_prices (name_key, name, day, price) VALUES ('a', 'A', '2026-09-01', 2)")
+            conn.commit()
+            conn.close()
+            db = CardDatabase(path)
+            self.assertEqual(db.sold_prices("A")[0]["code"], "")
+            db.close()
+
+
 if __name__ == "__main__":
     unittest.main()

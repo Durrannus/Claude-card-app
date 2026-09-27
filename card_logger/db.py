@@ -128,6 +128,10 @@ class CardDatabase:
             CREATE INDEX IF NOT EXISTS sold_prices_name ON sold_prices(name_key, day);
             """
         )
+        # The printing's card number (e.g. OGN-202a), when logged from the All cards list.
+        sold_columns = {r["name"] for r in self.conn.execute("PRAGMA table_info(sold_prices)")}
+        if "code" not in sold_columns:
+            self.conn.execute("ALTER TABLE sold_prices ADD COLUMN code TEXT NOT NULL DEFAULT ''")
         self.conn.commit()
 
     def close(self) -> None:
@@ -201,23 +205,34 @@ class CardDatabase:
 
     # --- sold prices you log yourself -------------------------------------
 
-    def add_sold_price(self, name: str, price: float, day: str | None = None, note: str = "") -> int:
+    def add_sold_price(self, name: str, price: float, day: str | None = None, note: str = "",
+                       code: str = "") -> int:
         if price <= 0:
             raise ValueError("Sold price must be above zero")
         cur = self.conn.execute(
-            "INSERT INTO sold_prices (name_key, name, day, price, note) VALUES (?, ?, ?, ?, ?)",
-            (name_key(name), name, day or date.today().isoformat(), price, note.strip()),
+            "INSERT INTO sold_prices (name_key, name, day, price, note, code) VALUES (?, ?, ?, ?, ?, ?)",
+            (name_key(name), name, day or date.today().isoformat(), price, note.strip(), code.strip()),
         )
         self.conn.commit()
         return cur.lastrowid
 
-    def sold_prices(self, name: str) -> list[dict]:
-        """Logged sold prices for a card (any spelling), newest first."""
+    def sold_prices(self, name: str, code: str | None = None) -> list[dict]:
+        """Logged sold prices for a card (any spelling), newest first; with
+        `code`, only those logged for that printing."""
         rows = self.conn.execute(
-            "SELECT id, day, price, note FROM sold_prices WHERE name_key = ? ORDER BY day DESC, id DESC",
-            (name_key(name),),
+            "SELECT id, day, price, note, code FROM sold_prices WHERE name_key = ?"
+            + (" AND code = ? COLLATE NOCASE" if code is not None else "") + " ORDER BY day DESC, id DESC",
+            (name_key(name),) + ((code,) if code is not None else ()),
         )
         return [dict(r) for r in rows]
+
+    def sold_prices_by_code(self) -> dict[str, list[dict]]:
+        """Sold prices logged for specific printings, by upper-case card number, newest first."""
+        found: dict[str, list[dict]] = {}
+        for r in self.conn.execute("SELECT id, day, price, note, code FROM sold_prices WHERE code != '' "
+                                   "ORDER BY day DESC, id DESC"):
+            found.setdefault(r["code"].upper(), []).append(dict(r))
+        return found
 
     def delete_sold_price(self, sold_id: int) -> None:
         self.conn.execute("DELETE FROM sold_prices WHERE id = ?", (sold_id,))

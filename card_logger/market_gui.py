@@ -52,17 +52,18 @@ def _money(usd: float) -> str:
 class SoldPriceDialog(tk.Toplevel):
     """Log sold prices you've seen (e.g. on eBay) for one card, or remove them."""
 
-    def __init__(self, parent, db: CardDatabase, name: str):
+    def __init__(self, parent, db: CardDatabase, name: str, code: str | None = None, version: str = ""):
         super().__init__(parent)
         self.title("Sold prices")
         self.transient(parent)
         self.resizable(False, False)
-        self.db, self.name = db, name
+        self.db, self.name, self.code = db, name, code  # code: just this printing (e.g. OGN-202a)
         self.changed = False
 
         form = ttk.Frame(self, padding=20)
         form.pack(fill="both", expand=True)
-        ttk.Label(form, text=name, style="Section.TLabel", font=theme.font(14, "bold")).grid(
+        title = name + (f"  ·  {code}" if code else "") + (f"  ({version})" if version else "")
+        ttk.Label(form, text=title, style="Section.TLabel", font=theme.font(14, "bold")).grid(
             row=0, column=0, columnspan=3, sticky="w")
         ttk.Label(form, style="Muted.TLabel", wraplength=theme.px(380), justify="left", text=(
             "Add each sold price you see, one at a time: the price one copy sold for, in "
@@ -102,10 +103,11 @@ class SoldPriceDialog(tk.Toplevel):
         self.wait_window()
 
     def _load(self) -> None:
-        self._rows = self.db.sold_prices(self.name)
+        self._rows = self.db.sold_prices(self.name, self.code)
         self.listbox.delete(0, "end")
         for r in self._rows:
-            self.listbox.insert("end", f"{r['day']}    {currency.fmt_local(r['price'])}    {r['note']}")
+            printing = f"    {r['code']}" if r["code"] and not self.code else ""
+            self.listbox.insert("end", f"{r['day']}    {currency.fmt_local(r['price'])}{printing}    {r['note']}")
         if not self._rows:
             self.listbox.insert("end", "Nothing logged yet.")
 
@@ -113,7 +115,7 @@ class SoldPriceDialog(tk.Toplevel):
         try:
             price = currency.parse(self.price.get())
             day = date.fromisoformat(self.day.get().strip()).isoformat()
-            self.db.add_sold_price(self.name, price, day, self.note.get())
+            self.db.add_sold_price(self.name, price, day, self.note.get(), code=self.code or "")
         except ValueError:
             messagebox.showerror("Sold price", "Enter a price above zero and a date like 2026-09-27.", parent=self)
             return
@@ -284,7 +286,7 @@ class MarketTab(ttk.Frame):
         if key == "value":
             return r.value or None
         if key == "ebay":
-            sold = market.recent_sold(self.db.sold_prices(r.name))
+            sold = self._recent_sold(r)
             return sold[0] if sold else None
         if key == "profit":
             return r.profit
@@ -343,7 +345,7 @@ class MarketTab(ttk.Frame):
         for i, (idx, r) in enumerate(shown):
             trend_known = r.trend is not None and r.trend.enough_data
             profit = r.profit
-            sold = market.recent_sold(self.db.sold_prices(r.name))
+            sold = self._recent_sold(r)
             self.tree.insert("", "end", iid=str(idx),
                              tags=(SIGNAL_TAGS[r.signal], theme.row_tag(i)), values=[
                 r.signal,
@@ -385,6 +387,15 @@ class MarketTab(ttk.Frame):
             )
         self.show_details()
 
+    def _recent_sold(self, r: market.MarketRow):
+        """Sold prices for the printing you own (by card number) if any were
+        logged for it, otherwise for the card name."""
+        if r.card and r.card.number:
+            sold = market.recent_sold(self.db.sold_prices(r.name, r.card.number))
+            if sold:
+                return sold
+        return market.recent_sold(self.db.sold_prices(r.name))
+
     def show_details(self) -> None:
         sel = self.tree.selection()
         if not sel:
@@ -416,7 +427,7 @@ class MarketTab(ttk.Frame):
 
         self.ebay_button.state(["!disabled"])
         self.log_button.state(["!disabled"])
-        sold = market.recent_sold(self.db.sold_prices(r.name))
+        sold = self._recent_sold(r)
         if not sold:
             self.d_ebay.set("eBay sold: none logged. Open eBay's sold listings and log a few prices.")
         else:

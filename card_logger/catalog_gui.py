@@ -23,10 +23,10 @@ COLUMNS = [
     ("number", "#", 104, "w", False),
     ("version", "Version", 116, "w", False),
     ("price", "Price", 88, "e", True),
-    ("d1", "1 day", 66, "center", True),
+    ("ebay", "eBay sold", 96, "e", True),
     ("d7", "7 days", 72, "center", True),
     ("cm", "EU price", 100, "e", True),
-    ("play", "Play rate", 92, "center", True),
+    ("play", "Played", 80, "center", True),
     ("meta", "Meta move", 118, "center", True),
     ("owned", "Own", 56, "center", True),
 ]
@@ -55,6 +55,7 @@ class AllCardsView(ttk.Frame):
         self.play: dict[str, float] = {}
         self.trends: dict = {}
         self.owned: dict[str, int] = {}
+        self.sold: dict[str, list[dict]] = {}  # eBay sold prices you logged, by card number
         self.sort_key, self.sort_reverse = "price", True  # most valuable first
 
         bar = ttk.Frame(self)
@@ -116,7 +117,7 @@ class AllCardsView(ttk.Frame):
         # The card number, version and price must never be cut short.
         self.tree = theme.make_table(table, COLUMNS, on_sort=self.sort_by, flexible=("name", "version"),
                                      fit_text={"name": "Jinx - Demolitionist", "number": "OGN-303-STAR", "version": "Signature",
-                                               "price": "$1,266.68 F"},
+                                               "price": "£999.99 F"},
                                      selectmode="browse")
         self.tree.tag_configure("up", foreground=theme.GOOD)
         self.tree.tag_configure("down", foreground=theme.BAD)
@@ -139,10 +140,13 @@ class AllCardsView(ttk.Frame):
             ttk.Button(buttons, text="+ Add to collection", style="Small.TButton", command=self.add_to_collection),
             ttk.Button(buttons, text="★ Add to wishlist", style="Small.TButton", command=self.add_to_wishlist),
             ttk.Button(buttons, text="eBay sold ↗", style="Small.TButton", command=self.open_ebay),
+            ttk.Button(buttons, text="Log sold price", style="Small.TButton", command=self.log_sold),
             ttk.Button(buttons, text="Card image ↗", style="Small.TButton", command=self.open_image),
         ]
         for i, b in enumerate(self.buttons):
-            b.grid(row=i // 2, column=i % 2, sticky="ew", padx=(0 if i % 2 == 0 else 4, 0), pady=(0 if i < 2 else 4, 0))
+            last_alone = i == len(self.buttons) - 1 and i % 2 == 0
+            b.grid(row=i // 2, column=i % 2, columnspan=2 if last_alone else 1, sticky="ew",
+                   padx=(0 if i % 2 == 0 else 4, 0), pady=(0 if i < 2 else 4, 0))
 
 
     # --- data ----------------------------------------------------------------
@@ -152,6 +156,7 @@ class AllCardsView(ttk.Frame):
         self.play = {name_key(u.name): u.share for u in self.meta.card_usage(include_runes=True)}
         self.trends = market.meta_trends(self.meta, self.trend_days())
         self.owned = self.meta.owned_counts()
+        self.sold = self.db.sold_prices_by_code()
         sets = sorted({c.set_name for c in self.cards if c.set_name})
         rarities = sorted({c.rarity for c in self.cards if c.rarity})
         self.set_box["values"] = [ALL_SETS] + sets
@@ -164,10 +169,14 @@ class AllCardsView(ttk.Frame):
             "name": c.base_name.lower(), "number": c.number_key(),
             "version": (catalog.VERSIONS.index(c.version) if c.version in catalog.VERSIONS else 99, c.detail),
             "set": c.set_name.lower(), "rarity": c.rarity.lower(),
-            "price": c.main_price or None, "d1": c.change_pct(1), "d7": c.change_pct(7), "cm": c.cm_price or None,
+            "price": c.main_price or None, "ebay": (self._sold(c) or (None,))[0], "d1": c.change_pct(1), "d7": c.change_pct(7), "cm": c.cm_price or None,
             "play": self.play.get(k, 0.0), "owned": self.owned.get(k, 0),
             "meta": self._meta_points(c),
         }[key]
+
+    def _sold(self, c: catalog.CatalogCard) -> tuple[float, int, str] | None:
+        """(average, count, newest day) of the sold prices logged for this printing."""
+        return market.recent_sold(self.sold.get(c.code.upper(), []))
 
     def _meta_points(self, c: catalog.CatalogCard) -> float | None:
         trend = self.trends.get(name_key(c.base_name))
@@ -228,7 +237,8 @@ class AllCardsView(ttk.Frame):
             self.tree.insert("", "end", iid=str(i), tags=(theme.row_tag(i),) + ((trend,) if trend else ()), values=[
                 c.base_name, c.code, SHORT_VERSION.get(c.version, c.version),
                 (_money(c.main_price) + (" F" if c.is_foil_only else "")) if c.main_price else "—",
-                _pct(c.change_pct(1)), _pct(d7),
+                self._sold_text(c),
+                _pct(d7),
                 currency.fmt_eur(c.cm_price) if c.cm_price else "",
                 f"{self.play[k]:.0%}" if k in self.play else "",
                 self._meta_text(c),
@@ -245,6 +255,10 @@ class AllCardsView(ttk.Frame):
                 self.tree.selection_set(str(again))
                 self.tree.see(str(again))
         self.show_details()
+
+    def _sold_text(self, c: catalog.CatalogCard) -> str:
+        sold = self._sold(c)
+        return "" if not sold else currency.fmt_local(sold[0]) + (f" ({sold[1]})" if sold[1] > 1 else "")
 
     def _meta_text(self, c: catalog.CatalogCard) -> str:
         trend = self.trends.get(name_key(c.base_name))
@@ -291,6 +305,7 @@ class AllCardsView(ttk.Frame):
         if c.cm_price:
             facts.append(f"EU price (Cardmarket) {currency.fmt_eur(c.cm_price)}"
                          + (f" (€{c.cm_price:,.2f})" if currency.code() != "EUR" else ""))
+        facts.append(self._sold_fact(c))
         facts.append(f"Played in {self.play[k]:.0%} of decklists" if k in self.play else "Not in your decklists")
         trend = self.trends.get(k)
         if trend is not None and trend.enough_data:
@@ -310,6 +325,20 @@ class AllCardsView(ttk.Frame):
         if not any(v >= 0.005 for _, v in series if v is not None):
             series = []  # never (or almost never) played: say so rather than draw a flat line
         self.play_chart.set_data(series, "Not being played in your decklists.")
+
+    def _sold_fact(self, c: catalog.CatalogCard) -> str:
+        from .market_gui import _friendly_day
+        sold = self._sold(c)
+        if not sold:
+            return "eBay sold: none logged yet (click \"Log sold price\")"
+        avg, count, newest = sold
+        text = (f"eBay sold: {currency.fmt_local(avg)}" + (f" (average of {count})" if count > 1 else "")
+                + f", latest {_friendly_day(newest).lower()}")
+        if c.main_price:
+            diff = (currency.to_usd(avg) - c.main_price) / c.main_price
+            if abs(diff) >= 0.05:
+                text += f", {abs(diff):.0%} {'above' if diff > 0 else 'below'} TCGplayer"
+        return text
 
     # --- actions ---------------------------------------------------------------
 
@@ -347,6 +376,15 @@ class AllCardsView(ttk.Frame):
             if c.version in ("Alternate art", "Overnumbered", "Signature"):
                 words.append(c.version.lower())
             webbrowser.open(market.ebay_sold_url(" ".join(words), "Riftbound", self.ebay_site()))
+
+    def log_sold(self) -> None:
+        from .market_gui import SoldPriceDialog
+        c = self.selected()
+        if c and SoldPriceDialog(self.winfo_toplevel(), self.db, c.base_name, code=c.code,
+                                 version=c.version if c.version != "Standard" else "").changed:
+            self.sold = self.db.sold_prices_by_code()
+            self.fill()
+            self.on_data_changed()
 
     def open_image(self) -> None:
         c = self.selected()

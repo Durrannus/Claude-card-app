@@ -282,10 +282,12 @@ The Market tab opens on **All cards**: every Riftbound printing (about
   | Token / Oversized | UNL-T02 | tokens and oversized cards |
 
 - its current **TCGplayer price** (an "F" means the card only comes in foil);
-- the **1-day and 7-day price change**, available from the very first
-  download;
-- the **EU price** (Cardmarket, in EUR);
-- its **play rate** in your decklists and how many copies you **own**.
+- the **eBay sold** price you've logged for that printing (see
+  [eBay sold prices](#ebay-sold-prices));
+- the **7-day price change**, available from the very first download (the
+  1-day change is in the side panel);
+- the **EU price** (Cardmarket, converted from EUR);
+- how often it's **played** in your decklists and how many copies you **own**.
 
 It also shows each card's **meta move**: how its play rate changed over the
 **Compare** period (e.g. the last 7 days of decklists against the 7 before).
@@ -344,13 +346,20 @@ eBay doesn't let apps read sold listings automatically:
 
 So eBay prices are a quick manual step instead:
 
-1. Select a card in the Market tab and click **eBay ↗**. eBay's sold
-   listings for that card open in your browser, newest first. Pick your
-   eBay site (ebay.com, ebay.co.uk, …) in the box next to the buttons.
+1. Select a card in the Market tab and click **eBay sold ↗**. eBay's sold
+   listings for that card open in your browser, newest first, on
+   ebay.co.uk when you're using pounds (change the site in the box next to
+   the buttons in the other Market views).
 2. Click **Log sold price** and enter a few of the prices you see.
 
-The **eBay sold** column then shows the average of the last 30 days, and
-the side panel tells you how it compares with the TCGplayer price. That
+The **eBay sold** column then shows the average of the last 30 days (with
+the number of sales in brackets when there's more than one), and the side
+panel tells you how it compares with the TCGplayer price. In **All cards**,
+prices are logged for the exact printing you selected (OGN-202 and its alt
+art OGN-202a are kept apart), and you can click the **eBay sold** heading to
+list the cards you've logged. In **My cards**, the column uses the prices
+logged for the printing you own (its card number), or else for any printing
+of that card. That
 helps you decide where to sell. Enter prices in your chosen currency (£ by
 default), e.g. what you see on ebay.co.uk.
 
