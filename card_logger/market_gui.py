@@ -33,15 +33,15 @@ TAG_COLORS = {"sell": theme.GOLD, "buy": theme.GOOD, "rising": "#4fd1c5", "watch
               "hold": theme.TEXT, "none": theme.MUTED}
 
 COLUMNS = [
-    ("signal", "Signal", 150, "w"),
-    ("name", "Card", 150, "w"),
-    ("owned", "Own", 56, "center"),
+    ("signal", "Signal", 140, "w"),
+    ("name", "Card", 140, "w"),
+    ("owned", "Own", 58, "center"),
     ("value", "Value", 70, "e"),
     ("ebay", "eBay sold", 96, "e"),
-    ("profit", "Profit", 75, "e"),
-    ("price", "Price move", 106, "center"),
-    ("play", "Play rate", 90, "center"),
-    ("meta", "Meta move", 106, "center"),
+    ("profit", "Profit", 74, "e"),
+    ("price", "Price move", 116, "center"),
+    ("play", "Play rate", 96, "center"),
+    ("meta", "Meta move", 116, "center"),
 ]
 
 
@@ -138,6 +138,7 @@ class MarketTab(ttk.Frame):
         self.on_data_changed = on_data_changed or (lambda: None)
         self.rows: list[market.MarketRow] = []
         self.busy = False
+        self.sort_key, self.sort_reverse = None, True  # None: strongest signal first
 
         self._build_tiles()
         self._build_controls()
@@ -178,14 +179,15 @@ class MarketTab(ttk.Frame):
             ttk.Radiobutton(bar, text=text, value=value, variable=self.view_var, style="Segment.TRadiobutton",
                             command=self._switch_view).pack(side="left")
 
-        # Only the signal views use these.
-        self.signal_controls = ttk.Frame(bar)
-        ttk.Label(self.signal_controls, text="Compare", style="Muted.TLabel").pack(side="left", padx=(20, 6))
-        self.window_var = tk.StringVar(value="Last 14 days")
-        box = ttk.Combobox(self.signal_controls, textvariable=self.window_var, values=list(WINDOWS),
-                           state="readonly", width=13)
+        # The comparison period drives "meta move" and price moves in every view.
+        ttk.Label(bar, text="Compare", style="Muted.TLabel").pack(side="left", padx=(20, 6))
+        self.window_var = tk.StringVar(value="Last 7 days")
+        box = ttk.Combobox(bar, textvariable=self.window_var, values=list(WINDOWS), state="readonly", width=13)
         box.pack(side="left")
         box.bind("<<ComboboxSelected>>", lambda _: self.refresh())
+
+        # Only the signal views use this.
+        self.signal_controls = ttk.Frame(bar)
 
         self.signal_var = tk.StringVar(value="All signals")
         box = ttk.Combobox(self.signal_controls, textvariable=self.signal_var, values=list(SIGNAL_FILTERS),
@@ -197,13 +199,14 @@ class MarketTab(ttk.Frame):
                                         command=self.update_all_prices)
         self.update_button.pack(side="right")
         self.auto_var = tk.BooleanVar(value=self.db.get_setting("auto_update", "1") == "1")
-        ttk.Checkbutton(bar, text="Update daily when the app opens", variable=self.auto_var,
+        ttk.Checkbutton(bar, text="Auto-update daily", variable=self.auto_var,
                         command=lambda: self.db.set_setting("auto_update", "1" if self.auto_var.get() else "0")
                         ).pack(side="right", padx=(0, 12))
 
     def _build_body(self) -> None:
         # Two bodies share the space: the all-cards price list and the signal views.
-        self.all_cards = AllCardsView(self, self.db, self.meta, self.on_data_changed, lambda: self.site_var.get())
+        self.all_cards = AllCardsView(self, self.db, self.meta, self.on_data_changed, lambda: self.site_var.get(),
+                                      trend_days=lambda: WINDOWS[self.window_var.get()])
         body = self.signal_body = ttk.Frame(self)
 
         details = ttk.Frame(body, style="Card.TFrame", padding=14, width=336)
@@ -235,7 +238,7 @@ class MarketTab(ttk.Frame):
         table.pack(side="top", fill="both", expand=True)
         self.tree = ttk.Treeview(table, columns=[c[0] for c in COLUMNS], show="headings", selectmode="extended")
         for key, heading, width, anchor in COLUMNS:
-            self.tree.heading(key, text=heading)
+            self.tree.heading(key, text=heading, command=lambda k=key: self.sort_by(k))
             # Only the card name gives up width when space is short.
             self.tree.column(key, width=width, anchor=anchor, minwidth=40 if key == "name" else width,
                              stretch=key == "name")
@@ -278,6 +281,37 @@ class MarketTab(ttk.Frame):
 
     # --- display -------------------------------------------------------------
 
+    def _sort_value(self, r: market.MarketRow, key: str):
+        """Value of a row for sorting; None sorts last in either direction."""
+        known = r.trend is not None and r.trend.enough_data
+        if key == "signal":
+            return -market.SIGNAL_ORDER.index(r.signal)  # strongest signal counts as "biggest"
+        if key == "name":
+            return r.name.lower()
+        if key == "owned":
+            return r.owned
+        if key == "value":
+            return r.value or None
+        if key == "ebay":
+            sold = market.recent_sold(self.db.sold_prices(r.name))
+            return sold[0] if sold else None
+        if key == "profit":
+            return r.profit
+        if key == "price":
+            return r.price_change.fraction if r.price_change else None
+        if key == "play":
+            return r.trend.recent_share if r.trend else None
+        if key == "meta":
+            return r.trend.change_points if known else None
+        return None
+
+    def sort_by(self, key: str) -> None:
+        if self.sort_key == key:
+            self.sort_reverse = not self.sort_reverse
+        else:
+            self.sort_key, self.sort_reverse = key, key != "name"  # numbers: biggest first
+        self.refresh()
+
     def _switch_view(self) -> None:
         catalog_view = self.view_var.get() == ALL_CARDS
         if catalog_view:
@@ -303,6 +337,14 @@ class MarketTab(ttk.Frame):
         shown = [(idx, r) for idx, r in enumerate(self.rows)
                  if (view == EVERYTHING or (view == MY_CARDS) == (r.owned > 0))
                  and (wanted is None or r.signal in wanted)]
+        if self.sort_key:
+            known = [x for x in shown if self._sort_value(x[1], self.sort_key) is not None]
+            unknown = [x for x in shown if self._sort_value(x[1], self.sort_key) is None]
+            known.sort(key=lambda x: self._sort_value(x[1], self.sort_key), reverse=self.sort_reverse)
+            shown = known + unknown
+        for key, heading, *_ in COLUMNS:
+            arrow = (" ▼" if self.sort_reverse else " ▲") if key == self.sort_key else ""
+            self.tree.heading(key, text=heading + arrow)
 
         selected = set(self.tree.selection())
         self.tree.delete(*self.tree.get_children())

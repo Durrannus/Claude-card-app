@@ -12,17 +12,19 @@ from .meta import MetaTracker
 PRICE_COLOR = "#b8862a"
 PLAY_COLOR = "#1f9aaa"
 ALL_SETS, ALL_RARITIES = "All sets", "All rarities"
+META_FILTERS = ["Any meta", "Rising in meta", "Falling in meta", "Played in meta", "Not played"]
 
 # (key, heading, width, anchor, numeric)
 COLUMNS = [
-    ("name", "Card", 190, "w", False),
-    ("set", "Set", 100, "w", False),
-    ("rarity", "Rarity", 90, "w", False),
-    ("price", "Price", 80, "e", True),
-    ("d1", "1 day", 70, "center", True),
-    ("d7", "7 days", 76, "center", True),
-    ("cm", "Cardmarket", 112, "e", True),
-    ("play", "Play rate", 90, "center", True),
+    ("name", "Card", 170, "w", False),
+    ("set", "Set", 86, "w", False),
+    ("rarity", "Rarity", 80, "w", False),
+    ("price", "Price", 88, "e", True),
+    ("d1", "1 day", 66, "center", True),
+    ("d7", "7 days", 72, "center", True),
+    ("cm", "Cardmarket", 114, "e", True),
+    ("play", "Play rate", 92, "center", True),
+    ("meta", "Meta move", 118, "center", True),
     ("owned", "Own", 56, "center", True),
 ]
 
@@ -38,14 +40,17 @@ def _pct(v: float | None) -> str:
 class AllCardsView(ttk.Frame):
     """Searchable, sortable list of every printing, with details and price history."""
 
-    def __init__(self, parent, db: CardDatabase, meta: MetaTracker, on_data_changed, ebay_site):
+    def __init__(self, parent, db: CardDatabase, meta: MetaTracker, on_data_changed, ebay_site,
+                 trend_days=lambda: 7):
         super().__init__(parent)
         self.db, self.meta = db, meta
         self.on_data_changed = on_data_changed
         self.ebay_site = ebay_site
+        self.trend_days = trend_days  # meta move compares the last N days of decklists with the N before
         self.cards: list[catalog.CatalogCard] = []
         self.shown: list[catalog.CatalogCard] = []
         self.play: dict[str, float] = {}
+        self.trends: dict = {}
         self.owned: dict[str, int] = {}
         self.sort_key, self.sort_reverse = "price", True  # most valuable first
 
@@ -62,6 +67,10 @@ class AllCardsView(ttk.Frame):
         self.rarity_box.pack(side="left", padx=(8, 0))
         for box in (self.set_box, self.rarity_box):
             box.bind("<<ComboboxSelected>>", lambda _: self.fill())
+        self.meta_var = tk.StringVar(value=META_FILTERS[0])
+        meta_box = ttk.Combobox(bar, textvariable=self.meta_var, values=META_FILTERS, state="readonly", width=14)
+        meta_box.pack(side="left", padx=(8, 0))
+        meta_box.bind("<<ComboboxSelected>>", lambda _: self.fill())
         self.min_price = tk.BooleanVar(value=False)
         ttk.Checkbutton(bar, text="$1 and up", variable=self.min_price, command=self.fill).pack(side="left", padx=12)
         self.count = tk.StringVar()
@@ -138,6 +147,7 @@ class AllCardsView(ttk.Frame):
     def refresh(self) -> None:
         self.cards = catalog.load(self.db)
         self.play = {name_key(u.name): u.share for u in self.meta.card_usage(include_runes=True)}
+        self.trends = market.meta_trends(self.meta, self.trend_days())
         self.owned = self.meta.owned_counts()
         sets = sorted({c.set_name for c in self.cards if c.set_name})
         rarities = sorted({c.rarity for c in self.cards if c.rarity})
@@ -151,7 +161,27 @@ class AllCardsView(ttk.Frame):
             "name": c.name.lower(), "set": c.set_name.lower(), "rarity": c.rarity.lower(),
             "price": c.main_price or None, "d1": c.change_pct(1), "d7": c.change_pct(7), "cm": c.cm_price or None,
             "play": self.play.get(k, 0.0), "owned": self.owned.get(k, 0),
+            "meta": self._meta_points(c),
         }[key]
+
+    def _meta_points(self, c: catalog.CatalogCard) -> float | None:
+        trend = self.trends.get(name_key(c.name))
+        return trend.change_points if trend is not None and trend.enough_data else None
+
+    def _meta_ok(self, c: catalog.CatalogCard) -> bool:
+        choice = self.meta_var.get()
+        if choice == META_FILTERS[0]:
+            return True
+        trend = self.trends.get(name_key(c.name))
+        if choice == "Played in meta":
+            return name_key(c.name) in self.play
+        if choice == "Not played":
+            return name_key(c.name) not in self.play
+        if trend is None or not trend.significant:
+            return False
+        rising = trend.change_points >= market.RISING_POINTS
+        falling = trend.change_points <= market.FALLING_POINTS
+        return rising if choice == "Rising in meta" else falling
 
     def sort_by(self, key: str) -> None:
         numeric = next(c[4] for c in COLUMNS if c[0] == key)
@@ -168,7 +198,8 @@ class AllCardsView(ttk.Frame):
                  if (not text or text in c.name.lower() or text in c.code.lower())
                  and (want_set == ALL_SETS or c.set_name == want_set)
                  and (want_rarity == ALL_RARITIES or c.rarity == want_rarity)
-                 and (not self.min_price.get() or c.main_price >= 1)]
+                 and (not self.min_price.get() or c.main_price >= 1)
+                 and self._meta_ok(c)]
         # Cards with no value for the column (e.g. no price) always go last.
         known = [c for c in shown if self._value(c, self.sort_key) is not None]
         unknown = [c for c in shown if self._value(c, self.sort_key) is None]
@@ -192,16 +223,28 @@ class AllCardsView(ttk.Frame):
                 _pct(c.change_pct(1)), _pct(d7),
                 f"€{c.cm_price:,.2f}" if c.cm_price else "",
                 f"{self.play[k]:.0%}" if k in self.play else "",
+                self._meta_text(c),
                 self.owned.get(k) or "",
             ])
         total = len(self.cards)
-        self.count.set(f"{len(shown):,} of {total:,} printings" if total else "")
+        note = ""
+        if self.trends and not any(t.enough_data for t in self.trends.values()):
+            note = "Meta move needs more decklists in the earlier period; try another Compare period  ·  "
+        self.count.set(note + (f"{len(shown):,} of {total:,} printings" if total else ""))
         if keep:
             again = next((i for i, c in enumerate(shown) if c.code == keep), None)
             if again is not None:
                 self.tree.selection_set(str(again))
                 self.tree.see(str(again))
         self.show_details()
+
+    def _meta_text(self, c: catalog.CatalogCard) -> str:
+        trend = self.trends.get(name_key(c.name))
+        if trend is None:
+            return ""
+        if not trend.enough_data:
+            return ""  # too few decklists in one of the periods; the count label says so
+        return f"{trend.change_points:+.0f} pts" + ("" if trend.significant else "?")
 
     def selected(self) -> catalog.CatalogCard | None:
         sel = self.tree.selection()
@@ -237,6 +280,11 @@ class AllCardsView(ttk.Frame):
         if c.cm_price:
             facts.append(f"Cardmarket €{c.cm_price:,.2f}")
         facts.append(f"Played in {self.play[k]:.0%} of decklists" if k in self.play else "Not in your decklists")
+        trend = self.trends.get(k)
+        if trend is not None and trend.enough_data:
+            facts.append(f"Meta move: {trend.previous_share:.0%} → {trend.recent_share:.0%} of decklists "
+                         f"({trend.change_points:+.0f} pts, last {self.trend_days()} days vs the {self.trend_days()} before"
+                         + (")" if trend.significant else ", could be chance)"))
         if self.owned.get(k):
             facts.append(f"You own {self.owned[k]}")
         self.d_facts.set("\n".join(facts))

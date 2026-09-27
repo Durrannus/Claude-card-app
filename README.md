@@ -255,8 +255,10 @@ The Market tab opens on **All cards**: every Riftbound printing (about
 - the **Cardmarket** (EUR) price;
 - its **play rate** in your decklists and how many copies you **own**.
 
-Search by name or card code, filter by set and rarity, and click any column
-heading to sort. For example, click **7 days** for the week's biggest movers
+It also shows each card's **meta move**: how its play rate changed over the
+**Compare** period (e.g. the last 7 days of decklists against the 7 before).
+Search by name or card code; filter by set, rarity or meta (rising, falling,
+played or not played); and click any column heading to sort. For example, click **7 days** for the week's biggest movers
 (tick **$1 and up** to skip penny cards). Select a card to see its price
 history chart and weekly play rate, add it to your collection or wishlist,
 check eBay's sold listings, or open the card image.
@@ -269,7 +271,8 @@ history charts grow over time.
 ## Market tab: when to sell or buy
 
 The other Market views (**My cards**, **Buy opportunities**, **Everything**)
-bring everything together. For every card you own (and
+bring everything together. Click any column heading there to sort as well,
+e.g. by Meta move to see the biggest risers and fallers. For every card you own (and
 every meta card you don't), it shows:
 
 - **Profit:** current value minus what you paid. Enter "Paid (each)" in the
