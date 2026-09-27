@@ -1,6 +1,6 @@
 # Card Collection Logger
 
-A desktop tool for buying and selling **Riftbound** cards (the League of
+A desktop and iPhone tool for buying and selling **Riftbound** cards (the League of
 Legends TCG). It tracks your collection, what you paid, how prices move and
 which cards the competitive meta is starting to play. From that it tells you
 when a card looks like a good sell or an early buy. It works for other card
@@ -41,6 +41,45 @@ lookups need the internet.
   cards you're missing (see below)
 - Export your collection and wishlist to a CSV file (opens in Excel / Google
   Sheets), or import cards from a CSV
+
+## iPhone app
+
+There's also a version for your iPhone (or any phone) that does everything
+the desktop app does: All cards with £ prices and card numbers, your
+collection with photos from the camera, the wishlist, eBay sold prices, the
+meta tracker, market signals and Future insight. It runs the same Python
+code as the desktop app inside the phone's browser (using
+[Pyodide](https://pyodide.org)), so the numbers match.
+
+**Install it:** open <https://durrannus.github.io/Claude-card-app/> in
+**Safari**, tap the **Share** button, then **Add to Home Screen**. It gets its
+own icon and opens full screen like any other app. The first start downloads
+about 10 MB, then it starts in a few seconds and works offline with the last
+data it downloaded.
+
+**Where the data comes from:** phones' browsers aren't allowed to read
+riftbound.gg or TopDeck.gg directly, so a GitHub Actions job
+(`.github/workflows/phone.yml`) does it every morning. It runs
+`python -m card_logger.phone_build`, which downloads every card's price, the
+exchange rates and new decklists the same way the desktop app's "Get latest
+data" does. It then publishes them with the app on GitHub Pages. Price history
+and decklists build up day by day on the `phone-data` branch.
+
+**Your data** (collection, wishlist, what you paid, sold prices, photos,
+settings) stays on the phone. Under **More** you can:
+
+- back it up to a file and restore it on a new phone;
+- export or import a CSV, which is the same format as the desktop app's, to
+  move cards between the phone and the PC.
+
+**One-time setup on GitHub** (repository **Settings**):
+
+1. **Pages** → *Build and deployment* → *Source*: **GitHub Actions**.
+2. Optional, for TopDeck.gg tournaments: **Secrets and variables** →
+   **Actions** → **New repository secret**, named `TOPDECK_API_KEY`, with
+   your TopDeck.gg key. Without it, decklists come from riftbound.gg only.
+3. **Actions** → **Phone app** → **Run workflow** to publish it straight
+   away (after that it runs every morning, and whenever the app changes).
 
 ## Requirements
 
