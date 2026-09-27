@@ -72,7 +72,7 @@ class Deck:
     placement: int | None = None
     date: str = ""
     notes: str = ""
-    source_id: str = ""  # where an imported deck came from, e.g. "limitless:<tournament>:<player>"
+    source_id: str = ""  # where an imported deck came from, e.g. "riftboundgg:t:<slug>"
     players: int | None = None  # size of the event
     wins: int | None = None     # match record, when known
     losses: int | None = None

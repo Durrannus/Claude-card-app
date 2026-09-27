@@ -63,23 +63,31 @@ def supported(card: Card) -> bool:
     return detect_source(card.game) is not None
 
 
+TEMPORARY_ERRORS = (429, 500, 502, 503, 504)
+RETRY_DELAYS = (2, 5)  # seconds to wait before each retry of a temporary error
+
+
 def _get_json(url: str) -> dict:
     request = urllib.request.Request(
         url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"}
     )
-    try:
-        with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
-            return json.load(response)
-    except urllib.error.HTTPError as e:
-        if e.code in (400, 404):
-            return {}  # these APIs answer "no such card" with 400/404
-        raise PriceLookupError(f"Price service returned an error ({e.code}).") from e
-    except (urllib.error.URLError, TimeoutError, OSError) as e:
-        raise PriceLookupError(
-            "Could not reach the price service. Check your internet connection."
-        ) from e
-    except json.JSONDecodeError as e:
-        raise PriceLookupError("Price service sent an unexpected response.") from e
+    for attempt in range(len(RETRY_DELAYS) + 1):
+        try:
+            with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
+                return json.load(response)
+        except urllib.error.HTTPError as e:
+            if e.code in (400, 404):
+                return {}  # these APIs answer "no such card" with 400/404
+            if e.code in TEMPORARY_ERRORS and attempt < len(RETRY_DELAYS):
+                time.sleep(RETRY_DELAYS[attempt])  # busy or briefly down: try again
+                continue
+            raise PriceLookupError(f"Price service returned an error ({e.code}). Try again later.") from e
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            raise PriceLookupError(
+                "Could not reach the price service. Check your internet connection."
+            ) from e
+        except json.JSONDecodeError as e:
+            raise PriceLookupError("Price service sent an unexpected response.") from e
 
 
 _cache: dict[str, tuple[float, dict]] = {}
@@ -175,6 +183,9 @@ def parse_riftbound(data: list[tuple[dict, list[dict], list[dict]]], card: Card)
     want_num = _card_number(card.number) if card.number else None
     hints = f"{card.rarity} {card.notes}".lower()
     want_variant = any(w in hints for w in VARIANT_WORDS)
+    # A named version ("signature", "overnumbered", "alt art") picks that exact printing;
+    # they can differ in price by a factor of ten.
+    named = {("alternate" if w == "alt art" else w) for w in VARIANT_WORDS if w in hints and w != "showcase"}
     want_foil = "foil" in hints
 
     candidates = []
@@ -203,6 +214,8 @@ def parse_riftbound(data: list[tuple[dict, list[dict], list[dict]]], card: Card)
                 score += 4
             if is_variant == want_variant:
                 score += 4
+            if named and any(w in name.lower() for w in named):
+                score += 3
             candidates.append((score, price, product, group, extended["Number"]))
     if not candidates:
         return None

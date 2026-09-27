@@ -78,6 +78,7 @@ class InsightTest(unittest.TestCase):
         self.assertEqual(self.report.with_placing, 84)
         self.assertEqual(self.report.with_record, 84)
         self.assertEqual(self.report.message, "")
+        self.assertEqual(self.report.span_days, 42)
 
     def test_winner_card(self):
         self.assertIn(insight.TOPCUT, self.kinds("Winner Card"))
@@ -114,6 +115,22 @@ class InsightTest(unittest.TestCase):
         scores = [c.score for c in self.report.candidates]
         self.assertEqual(scores, sorted(scores, reverse=True))
         self.assertTrue(all(0 < s <= 100 for s in scores))
+
+    def test_first_import_has_no_history_signs(self):
+        # Like a first riftbound.gg import: many decks, all from the last 3 days.
+        db = CardDatabase(":memory:")
+        meta = MetaTracker(db)
+        for n in range(60):
+            cards = ["Common"] + (["Rare Pick"] if n % 4 == 0 else [])
+            meta.add_deck(Deck(legend=f"Legend {n % 5}", date=day(n % 3),
+                               cards=[DeckCard(LEGEND, f"Legend {n % 5}", 1)] + [DeckCard(MAIN, c, 3) for c in cards]))
+        report = insight.analyse(db, meta, weeks=6, today=ANCHOR)
+        self.assertEqual(report.span_days, 3)
+        self.assertIn("cover the last 3 days", report.message)
+        self.assertEqual(report.legends, [])
+        kinds = {s.kind for c in report.candidates for s in c.signs}
+        self.assertFalse(kinds & {insight.NEW, insight.SPREAD, insight.CLIMB, insight.LEGEND_PULL}, kinds)
+        db.close()
 
     def test_not_enough_decks(self):
         db = CardDatabase(":memory:")

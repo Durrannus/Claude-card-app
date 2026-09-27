@@ -121,24 +121,27 @@ For Riftbound:
 
 The **Meta tracker** tab shows what the competitive decks are playing.
 
-### Automatic import from Limitless
+### Automatic import from riftbound.gg
 
-Click **Import tournaments** to download finished Riftbound tournaments from
-[Limitless](https://play.limitlesstcg.com), a tournament platform many stores
-and online events run on. Each player's placing and decklist come in
-automatically, when the organiser made the decklists public.
+Click **Import decklists** to download Riftbound decklists from
+[riftbound.gg](https://riftbound.gg). It can import two kinds:
 
-- **Look back (days)** and **Minimum players** choose which tournaments to
-  fetch. Use a higher minimum to focus on bigger, more competitive events.
-- Tournaments already imported are skipped, so importing again only adds
-  new ones.
-- Tick **Import new tournaments automatically each day** to fetch new
-  events whenever you open the app. With daily price updates also on, the
-  Market tab keeps itself up to date.
+- **Tournament decks**, with the event, its size and the player's placing.
+  They're dated by when the event happened. Decks from events older than
+  the look-back (or whose date riftbound.gg doesn't list) are skipped, so
+  old results can't pose as new trends.
+- **Community decks**, which are lists players have published recently.
+  They're the freshest sign of what people are building (and buying).
+  Copies of the same list count once.
 
-Limitless only covers events run on its platform. Big official events and
-other sites' results aren't included, so add those by hand as below if you
-want them.
+Importing again only adds what's new. riftbound.gg only serves about its
+newest 800 community decks (a few days' worth) at a time, so tick **Import
+new decklists automatically each day** to build up a longer history. An
+import takes a minute or two, because the site asks apps not to rush it.
+
+riftbound.gg's data service isn't an officially documented API. If it
+changes, the import fails with a clear message rather than importing bad
+data, and the connection check (below) shows what changed.
 
 ### Adding decklists by hand
 
@@ -256,8 +259,8 @@ Signals are only as good as the data behind them:
   app opens" ticked). It refreshes your collection and wishlist values and
   saves today's price for every Riftbound card, so cards you don't own get a
   price history too. Price charts fill in as the days go by.
-- **Decklists:** turn on the automatic Limitless import in the Meta
-  tracker tab, and add other tournament results by hand, with their dates. Trends compare recent decklists with older ones, so a
+- **Decklists:** turn on the daily riftbound.gg import in the Meta tracker
+  tab, and add other tournament results by hand, with their dates. Trends compare recent decklists with older ones, so a
   steady flow of dated lists is what makes early detection work.
 
 ## Future insight: cards that could be next
@@ -285,13 +288,18 @@ nothing is judged until there are at least 20 decklists in the period.
 **Legends on the move** shows which legends are gaining or losing meta share,
 comparing the second half of the period with the first.
 
-**Get latest data** imports new tournaments from Limitless and updates all
+**Get latest data** imports new decklists from riftbound.gg and updates all
 prices in one click. **Add to wishlist** and **eBay ↗** help you act on a
 card.
 
-The win-rate sign needs match records, and the top-finishers sign needs
-placings. Both come with tournaments imported from Limitless. Decklists you
-add by hand count towards top finishers when you enter a placement.
+The top-finishers sign needs placings, which come with riftbound.gg
+tournament decks and with decklists you add by hand when you enter a
+placement. The win-rate sign needs match records, which none of the current
+sources provide, so it stays quiet for now.
+
+Signs that compare with earlier weeks (climbing, spreading, rising legends,
+new arrivals) need a few weeks of history. After your first import the tab
+says how many days it has, and they appear as daily imports build up.
 
 These are signs to research, not predictions, and they can be wrong. Check
 spoilers, ban announcements and recent sales before you buy.

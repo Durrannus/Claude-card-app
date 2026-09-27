@@ -11,7 +11,9 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 
-from . import limitless, pricing
+from datetime import date
+
+from . import pricing, riftboundgg
 from .db import Card, DEFAULT_DB_PATH
 
 SAMPLE_CHARS = 1500
@@ -24,7 +26,7 @@ class Recorder:
         self.samples: list[tuple[str, str]] = []
 
     def fetch(self, url: str):
-        data = pricing._get_json(url)
+        data = riftboundgg.http_json(url) if url.startswith(riftboundgg.API) else pricing._get_json(url)
         self.samples.append((url, json.dumps(data, ensure_ascii=False)[:SAMPLE_CHARS]))
         return data
 
@@ -33,14 +35,19 @@ def check_riftbound_prices(rec: Recorder) -> str:
     groups = rec.fetch(f"{pricing.TCGCSV}/groups").get("results", [])
     if not groups:
         raise AssertionError("No Riftbound sets returned")
-    newest = sorted(groups, key=lambda g: g.get("publishedOn") or "", reverse=True)[0]
-    gid = newest["groupId"]
-    products = rec.fetch(f"{pricing.TCGCSV}/{gid}/products").get("results", [])
-    prices = rec.fetch(f"{pricing.TCGCSV}/{gid}/prices").get("results", [])
-    market = pricing.parse_riftbound_market([(products, prices)])
+    # Try the newest released sets first; some groups (future releases, bundles)
+    # only list sealed product.
+    released = [g for g in groups if (g.get("publishedOn") or "")[:10] <= date.today().isoformat()]
+    market, newest = {}, None
+    for newest in sorted(released or groups, key=lambda g: g.get("publishedOn") or "", reverse=True)[:5]:
+        gid = newest["groupId"]
+        products = rec.fetch(f"{pricing.TCGCSV}/{gid}/products").get("results", [])
+        prices = rec.fetch(f"{pricing.TCGCSV}/{gid}/prices").get("results", [])
+        market = pricing.parse_riftbound_market([(products, prices)])
+        if market:
+            break
     if not market:
-        raise AssertionError(f"Set '{newest.get('name')}' returned {len(products)} products but no card prices "
-                             "could be read")
+        raise AssertionError("None of the 5 newest released sets had card prices that could be read")
     name, price = next(iter(market.values()))
     result = pricing.lookup_price(Card(name=name, game="Riftbound", set_name=newest.get("name", "")),
                                   fetch=rec.fetch)
@@ -48,29 +55,22 @@ def check_riftbound_prices(rec: Recorder) -> str:
             f"Looked up '{name}': ${result.price:,.2f} ({result.matched})")
 
 
-def check_limitless(rec: Recorder) -> str:
-    game_id = limitless.find_game_id(fetch=rec.fetch)
-    tournaments = rec.fetch(f"{limitless.API}/tournaments?game={game_id}&limit=10")
-    if not isinstance(tournaments, list) or not tournaments:
-        raise AssertionError(f"Game id '{game_id}' found but no tournaments listed")
-    decks, checked = 0, 0
-    for t in tournaments:
-        standings = rec.fetch(f"{limitless.API}/tournaments/{t['id']}/standings")
-        checked += 1
-        if isinstance(standings, list):
-            event = limitless.Event(str(t["id"]), t.get("name", ""), str(t.get("date", ""))[:10], t.get("players") or 0)
-            decks = sum(1 for s in standings if limitless.standing_to_deck(event, s))
-            if decks:
-                deck = next(limitless.standing_to_deck(event, s) for s in standings
-                            if limitless.standing_to_deck(event, s))
-                sections = sorted({c.section for c in deck.cards})
-                return (f"Riftbound game id '{game_id}'. '{t.get('name')}' has {decks} decklists; first one: "
-                        f"legend '{deck.legend}', {len(deck.cards)} cards in {', '.join(sections)}, "
-                        f"record {deck.wins}-{deck.losses}")
-        if checked >= 5:
-            break
-    raise AssertionError(f"Checked {checked} recent tournaments but read no decklists from them "
-                         "(they may be private, or the decklist format differs; see samples)")
+def check_riftboundgg(rec: Recorder) -> str:
+    cards = riftboundgg.load_cards(rec.fetch)
+    events = riftboundgg._get("gettournaments?game=riftbound&page=1", rec.fetch)
+    if not isinstance(events, list) or not events:
+        raise AssertionError("No tournaments listed")
+    decks = riftboundgg._get(riftboundgg._deck_query(1, False), rec.fetch)
+    if not isinstance(decks, list) or not decks:
+        raise AssertionError("No community decks listed")
+    converted = [d for d, _ in (riftboundgg.to_deck(raw, cards) for raw in decks) if d]
+    unknown = sum(u for _, u in (riftboundgg.to_deck(raw, cards) for raw in decks))
+    if not converted:
+        raise AssertionError(f"Read {len(decks)} decks but none converted (card codes may have changed)")
+    deck = converted[0]
+    return (f"{len(cards)} cards; newest event '{events[0].get('name')}' "
+            f"({events[0].get('players_count')} players); {len(converted)}/{len(decks)} newest community decks read, "
+            f"{unknown} unknown card codes; e.g. legend '{deck.legend}', {sum(c.quantity for c in deck.cards)} cards")
 
 
 def check_other(rec: Recorder, game: str, name: str) -> str:
@@ -80,7 +80,7 @@ def check_other(rec: Recorder, game: str, name: str) -> str:
 
 CHECKS = [
     ("Riftbound prices (TCGCSV)", check_riftbound_prices),
-    ("Riftbound tournaments (Limitless)", check_limitless),
+    ("Riftbound decklists (riftbound.gg)", check_riftboundgg),
     ("Magic prices (Scryfall)", lambda rec: check_other(rec, "Magic", "Lightning Bolt")),
     ("Pokémon prices (Pokémon TCG API)", lambda rec: check_other(rec, "Pokémon", "Pikachu")),
     ("Yu-Gi-Oh! prices (YGOPRODeck)", lambda rec: check_other(rec, "Yu-Gi-Oh!", "Dark Magician")),

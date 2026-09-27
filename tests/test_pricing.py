@@ -97,6 +97,21 @@ class RiftboundTest(unittest.TestCase):
         self.assertEqual(r.price, 61.0)
         self.assertIn("Alternate Art", r.matched)
 
+    def test_named_version(self):
+        # Real TCGplayer names and prices for one card's printings.
+        products = [rb_product(21, "Jinx, Loose Cannon", "251/298"),
+                    rb_product(22, "Jinx, Loose Cannon (Overnumbered)", "301/298", "Showcase"),
+                    rb_product(23, "Jinx, Loose Cannon (Signature)", "301*/298", "Showcase")]
+        prices = [{"productId": 21, "subTypeName": "Foil", "marketPrice": 0.25},
+                  {"productId": 22, "subTypeName": "Foil", "marketPrice": 160.52},
+                  {"productId": 23, "subTypeName": "Foil", "marketPrice": 1266.68}]
+        data = [(RB_GROUPS[0], products, prices)]
+        price = lambda **kw: parse_riftbound(data, Card(name="Jinx, Loose Cannon", **kw)).price
+        self.assertEqual(price(), 0.25)
+        self.assertEqual(price(notes="signature"), 1266.68)
+        self.assertEqual(price(rarity="Showcase", notes="overnumbered"), 160.52)
+        self.assertEqual(price(rarity="Showcase"), 160.52)
+
     def test_dash_spelling_and_number(self):
         r = parse_riftbound(self.data(), Card(name="Gust Monk", number="SFD-020"))
         self.assertEqual(r.price, 0.30)
@@ -133,6 +148,31 @@ class RiftboundTest(unittest.TestCase):
     def test_not_found(self):
         with self.assertRaises(PriceLookupError):
             lookup_price(Card(name="Nobody", game="Riftbound"), fetch=rb_fetch())
+
+
+class RetryTest(unittest.TestCase):
+    def test_temporary_errors_are_retried(self):
+        import io
+        import urllib.error
+        from unittest import mock
+        from card_logger import pricing
+        calls = []
+
+        def flaky(request, timeout):
+            calls.append(1)
+            if len(calls) < 3:
+                raise urllib.error.HTTPError(request.full_url, 502, "Bad Gateway", {}, None)
+            return io.BytesIO(b'{"ok": true}')
+
+        with mock.patch("urllib.request.urlopen", flaky), mock.patch.object(pricing, "RETRY_DELAYS", (0, 0)):
+            self.assertEqual(pricing._get_json("https://example.test/x"), {"ok": True})
+            self.assertEqual(len(calls), 3)
+            calls.clear()
+            calls.extend([1, 1, 1, 1, 1])  # keeps failing: gives up with a clear message
+            with mock.patch("urllib.request.urlopen",
+                            lambda r, timeout: (_ for _ in ()).throw(urllib.error.HTTPError(r.full_url, 500, "", {}, None))):
+                with self.assertRaisesRegex(pricing.PriceLookupError, "500"):
+                    pricing._get_json("https://example.test/x")
 
 
 class DetectSourceTest(unittest.TestCase):

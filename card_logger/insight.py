@@ -31,6 +31,8 @@ ALREADY_META = 0.60   # cards in this share of decks are already staples
 Z_NEEDED = 1.65       # about 95% sure of the direction of a difference
 Z_EARLY = 1.28        # about 90% sure: a lower bar for an early climb, which is the point of this tab
 CORE_INCLUSION = 0.60  # "core card" of a legend: in this share of its lists
+MIN_EARLIER = 10      # decklists needed in the earlier half before comparing with it
+NEW_HISTORY_DAYS = 28  # history needed before "first seen recently" means anything
 
 TOPCUT, WINRATE, CLIMB, LEGEND_PULL, SPREAD, PRICE, NEW, SPECULATION = (
     "Top finishers", "Wins more", "Climbing", "Rising legend", "Spreading", "Price first", "New", "Unplayed, price up",
@@ -88,6 +90,7 @@ class Report:
     with_record: int = 0
     start: str = ""
     end: str = ""
+    span_days: int = 0   # how far back the decklists actually go
     message: str = ""
 
 
@@ -167,6 +170,18 @@ def analyse(db: CardDatabase, meta: MetaTracker, weeks: int = 6, today: date | N
 
     recent = {d.id for d in decks if d.date > middle.isoformat()}
     previous = set(by_id) - recent
+    all_dates = [r["d"] for r in meta.conn.execute("SELECT MIN(date) AS d FROM decks WHERE date != ''")]
+    earliest = date.fromisoformat(all_dates[0]) if all_dates and all_dates[0] else anchor
+    report.span_days = (anchor - earliest).days + 1
+    # Signs that compare with earlier weeks need earlier data to compare with.
+    can_compare = len(previous) >= MIN_EARLIER
+    can_call_new = report.span_days >= NEW_HISTORY_DAYS
+    if not can_compare or not can_call_new:
+        report.message = (
+            f"Your decklists cover the last {report.span_days} day{'s' if report.span_days != 1 else ''} so far. "
+            "Signs that compare with earlier weeks (climbing, spreading, rising legends, new arrivals) appear once "
+            "there's a few weeks of history, so keep importing daily. Top-finisher, win-rate and price signs "
+            "work already.")
     week_of = {d.id: min(weeks - 1, (date.fromisoformat(d.date) - start).days // 7) for d in decks}
     week_sizes = [sum(1 for d in decks if week_of[d.id] == w) for w in range(weeks)]
     top = {d.id for d in decks if _is_top(d) is True}
@@ -185,6 +200,8 @@ def analyse(db: CardDatabase, meta: MetaTracker, weeks: int = 6, today: date | N
             in_recent + in_prev, two_prop_z(in_recent, len(recent), in_prev, len(previous)),
         ))
     report.legends.sort(key=lambda t: -t.change_points)
+    if not can_compare:
+        report.legends = []  # nothing earlier to compare with yet
     rising_legends = {name_key(t.legend): t for t in report.legends if t.rising}
 
     owned = meta.owned_counts()
@@ -226,7 +243,7 @@ def analyse(db: CardDatabase, meta: MetaTracker, weeks: int = 6, today: date | N
                   for w in range(weeks) if week_sizes[w] >= 3]
         c.slope = slope_per_week(weekly)
         climb_z = two_prop_z(len(playing & recent), len(recent), len(playing & previous), len(previous))
-        if (c.slope is not None and c.slope >= 2 and recent_share - prev_share >= 0.05
+        if (can_compare and c.slope is not None and c.slope >= 2 and recent_share - prev_share >= 0.05
                 and climb_z >= Z_EARLY and recent_share < ALREADY_META):
             c.signs.append(Sign(CLIMB, min(20, c.slope * 3),
                                 f"Play rate climbing about {c.slope:+.1f} points a week "
@@ -248,7 +265,7 @@ def analyse(db: CardDatabase, meta: MetaTracker, weeks: int = 6, today: date | N
 
         legends_recent = {legend_of[i] for i in playing & recent if i in legend_of}
         legends_prev = {legend_of[i] for i in playing & previous if i in legend_of}
-        if len(legends_recent) - len(legends_prev) >= 2:
+        if can_compare and len(legends_recent) - len(legends_prev) >= 2:
             c.signs.append(Sign(SPREAD, min(10, 3 * (len(legends_recent) - len(legends_prev))),
                                 f"Now played by {len(legends_recent)} legends, up from {len(legends_prev)}. "
                                 "Cards that fit many decks become staples."))
@@ -256,13 +273,13 @@ def analyse(db: CardDatabase, meta: MetaTracker, weeks: int = 6, today: date | N
         change = price_change(db.price_history(name=name), history_cutoff)
         if change:
             c.price_move = change.fraction
-            if change.fraction >= 0.20 and recent_share - prev_share < 0.05:
+            if change.fraction >= 0.20 and (not can_compare or recent_share - prev_share < 0.05):
                 c.signs.append(Sign(PRICE, min(10, change.fraction * 20),
                                     f"Price up {change.fraction:+.0%} in {change.days} days while play hasn't grown "
                                     "yet. Buyers may be ahead of the tournament results."))
 
         seen = first_seen.get(key, "")
-        if seen and seen > (anchor - timedelta(days=14)).isoformat() and len(playing) >= 3:
+        if can_call_new and seen and seen > (anchor - timedelta(days=14)).isoformat() and len(playing) >= 3:
             c.signs.append(Sign(NEW, 10, f"First appeared in decklists on {seen} and is already in "
                                          f"{len(playing)} lists."))
 
