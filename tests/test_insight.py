@@ -143,6 +143,51 @@ class InsightTest(unittest.TestCase):
         self.assertIn("No decklists", empty.message)
 
 
+class InvestmentsTest(unittest.TestCase):
+    def test_good_investments(self):
+        db = CardDatabase(":memory:")
+        meta = MetaTracker(db)
+        build(meta)
+        inv = insight.investments(db, meta, {}, today=ANCHOR)
+        good = {p.name: p for p in inv.good}
+        self.assertEqual(inv.good[0].name, "Winner Card")
+        self.assertEqual((good["Winner Card"].verdict, good["Winner Card"].stars), ("Strong buy", "★★★"))
+        self.assertEqual(good["Yi Core"].verdict, "Buy")
+        self.assertIn("Key card of a legend on the rise", [r.short for r in good["Yi Core"].reasons])
+        self.assertNotIn("Staple", good)
+        self.assertNotIn("Filler", good)
+
+    def test_bad_investments(self):
+        db = CardDatabase(":memory:")
+        meta = MetaTracker(db)
+        for n in range(60):
+            recent = n % 2 == 0
+            cards = ["Steady", "Pumped"] + ([] if recent else ["Fading"])
+            meta.add_deck(Deck(legend="Kennen", date=day(n % 14 if recent else 14 + n % 14),
+                               cards=[DeckCard(LEGEND, "Kennen", 1)] + [DeckCard(MAIN, c, 3) for c in cards]))
+        for i, price in enumerate([4.0, 4.0, 4.1, 6.0]):  # spike with no change in play
+            db.record_price("Pumped", price, day=day(12 - i * 4))
+        db.add(Card(name="Pumped", game="Riftbound", quantity=4, value=6.0))
+        inv = insight.investments(db, meta, {"fading": 5.0, "pumped": 6.0, "steady": 5.0}, today=ANCHOR)
+        bad = {p.name: p for p in inv.bad}
+        self.assertEqual(set(bad), {"Fading", "Pumped"})
+        self.assertEqual((bad["Fading"].verdict, bad["Fading"].strength), ("Avoid", 3))  # 100% -> 0% of decks
+        self.assertEqual(bad["Fading"].reasons[0].short, "Being played less")
+        self.assertEqual(bad["Pumped"].verdict, "Sell")  # you own it
+        self.assertEqual(bad["Pumped"].reasons[0].short, "Price jumped without more play")
+        self.assertEqual(inv.good, [])
+
+    def test_bulk_cards_left_out(self):
+        db = CardDatabase(":memory:")
+        meta = MetaTracker(db)
+        for n in range(60):
+            recent = n % 2 == 0
+            meta.add_deck(Deck(legend="Kennen", date=day(n % 14 if recent else 14 + n % 14),
+                               cards=[DeckCard(LEGEND, "Kennen", 1), DeckCard(MAIN, "Steady", 3)]
+                               + ([] if recent else [DeckCard(MAIN, "Cheap Fading", 3)])))
+        self.assertEqual(insight.investments(db, meta, {"cheapfading": 0.20}, today=ANCHOR).bad, [])
+
+
 class HelpersTest(unittest.TestCase):
     def test_slope(self):
         self.assertAlmostEqual(insight.slope_per_week([(0, 0.1), (1, 0.2), (2, 0.3)]), 10)

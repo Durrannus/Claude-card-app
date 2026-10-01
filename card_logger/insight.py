@@ -22,6 +22,7 @@ import math
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
+from . import currency, market
 from .db import CardDatabase, name_key
 from .market import meta_anchor, price_change
 from .meta import LEGEND, RUNES, MetaTracker
@@ -320,3 +321,157 @@ def _with_speculation(db: CardDatabase, meta: MetaTracker, report: Report, playe
                                                price_move=change.fraction, owned=owned.get(key, 0)))
     report.candidates.sort(key=lambda c: (-c.score, c.name.lower()))
     return report
+
+
+# --- investments: the simple view -------------------------------------------------
+
+GOOD, BAD = "good", "bad"
+SHORT = {
+    TOPCUT: "Winning players use it more",
+    WINRATE: "Decks with it win more",
+    CLIMB: "Being played more each week",
+    LEGEND_PULL: "Key card of a legend on the rise",
+    SPREAD: "Spreading to more decks",
+    PRICE: "Price rising before the play rate",
+    NEW: "New in tournament decks",
+    SPECULATION: "Price rising, but nobody plays it yet (risky)",
+}
+MARKET_DAYS = 14  # play-rate trend window for sell signals
+
+
+@dataclass
+class Reason:
+    short: str   # a few words, for the list
+    detail: str  # a plain sentence, for the side panel
+
+
+@dataclass
+class Pick:
+    name: str
+    kind: str              # GOOD or BAD
+    strength: int          # 1-3
+    reasons: list[Reason]
+    price: float = 0.0     # US dollars, cheapest regular printing
+    owned: int = 0
+
+    @property
+    def verdict(self) -> str:
+        if self.kind == GOOD:
+            return {3: "Strong buy", 2: "Buy", 1: "Worth watching"}[self.strength]
+        if self.owned:
+            return {3: "Sell now", 2: "Sell", 1: "Consider selling"}[self.strength]
+        return {3: "Avoid", 2: "Avoid", 1: "Be careful"}[self.strength]
+
+    @property
+    def stars(self) -> str:
+        return "★" * self.strength + "☆" * (3 - self.strength)
+
+
+@dataclass
+class Investments:
+    good: list[Pick] = field(default_factory=list)
+    bad: list[Pick] = field(default_factory=list)
+    decks: int = 0
+    message: str = ""
+
+
+def investments(db: CardDatabase, meta: MetaTracker, prices: dict[str, float] | None = None,
+                weeks: int = 6, today: date | None = None) -> Investments:
+    """Good and bad investments in plain terms, from the early-warning signs
+    above and the market's sell signals. `prices` maps name_key to a price."""
+    report = analyse(db, meta, weeks=weeks, today=today)
+    rows = market.analyse(db, meta, days=MARKET_DAYS)
+    prices = prices or {}
+    owned = meta.owned_counts()
+    out = Investments(decks=report.decks, message=report.message)
+    good: dict[str, Pick] = {}
+    bad: dict[str, Pick] = {}
+
+    def price_of(name: str, fallback: float = 0.0) -> float:
+        return prices.get(name_key(name)) or fallback
+
+    for c in report.candidates:
+        if c.score < 20:
+            continue  # one weak sign on its own isn't worth showing
+        strength = 3 if c.score >= 50 else 2 if c.score >= 30 else 1
+        if all(s.kind == SPECULATION for s in c.signs):
+            strength = 1  # price-only bets are a gamble
+        reasons = [Reason(SHORT.get(s.kind, s.kind), s.detail) for s in sorted(c.signs, key=lambda s: -s.points)]
+        good[name_key(c.name)] = Pick(c.name, GOOD, strength, reasons, price_of(c.name), owned.get(name_key(c.name), 0))
+
+    for r in rows:
+        key, t, ch = name_key(r.name), r.trend, r.price_change
+        significant = t is not None and t.significant
+        rising = significant and t.change_points >= market.RISING_POINTS
+        falling = significant and t.change_points <= market.FALLING_POINTS
+        spiked = ch is not None and ch.fraction >= market.PRICE_SPIKE
+        quiet = ch is None or ch.fraction < market.PRICE_QUIET
+        play = f"{t.previous_share:.0%} → {t.recent_share:.0%} of decks" if t else ""
+        price_text = f"{ch.fraction:+.0%} in {ch.days} days" if ch else ""
+        price = price_of(r.name, r.value)
+        if rising and quiet:
+            pick = good.get(key) or Pick(r.name, GOOD, 2, [], price, r.owned)
+            pick.strength = max(pick.strength, 2)
+            pick.reasons.insert(0, Reason("Being played more, price hasn't caught up",
+                                          f"Played more ({play}) but the price hasn't moved yet "
+                                          f"({price_text or 'no rise'}). That's usually the cheapest time to buy."))
+            good[key] = pick
+        elif rising and not spiked:
+            pick = good.get(key) or Pick(r.name, GOOD, 1, [], price, r.owned)
+            pick.reasons.insert(0, Reason("Rising in play and price",
+                                          f"Played more ({play}) and the price is starting to move ({price_text}). "
+                                          "It may still have room to grow."))
+            good[key] = pick
+        elif rising and spiked:
+            bad[key] = Pick(r.name, BAD, 1, [Reason(
+                "Price and play both peaking", f"Play ({play}) and price ({price_text}) are both up a lot. A good "
+                "time to sell spares, a risky time to buy.")], price, r.owned)
+        elif falling:
+            bad[key] = Pick(r.name, BAD, 3 if t.change_points <= -20 else 2, [Reason(
+                "Being played less", f"Play rate dropping: {play}. Prices usually follow once players stop "
+                "needing a card.")], price, r.owned)
+        elif spiked:
+            bad[key] = Pick(r.name, BAD, 2, [Reason(
+                "Price jumped without more play", f"Price up {price_text} but it isn't being played more. "
+                "Spikes like this often drop back.")], price, r.owned)
+        elif ch is not None and ch.fraction <= -0.20:
+            bad[key] = Pick(r.name, BAD, 1, [Reason(
+                "Price falling", f"Price down {-ch.fraction:.0%} in {ch.days} days, with no rise in play to "
+                "turn it round.")], price, r.owned)
+
+    # Mixed signals: keep only the clearly stronger side.
+    for key in set(good) & set(bad):
+        g, b = good[key], bad[key]
+        if g.strength > b.strength:
+            del bad[key]
+        elif b.strength > g.strength:
+            del good[key]
+        else:
+            del good[key], bad[key]
+
+    order = lambda p: (-p.strength, -len(p.reasons), -(p.price or 0), p.name.lower())  # noqa: E731
+    out.good = _trim(sorted(good.values(), key=order))
+    out.bad = _trim(sorted(bad.values(), key=order))
+    return out
+
+
+MAX_WEAK = 15  # weakest picks shown per list; your own cards always show
+
+
+MIN_PRICE = 1.0  # in your currency: cheaper cards are bulk, not investments (unless you own them)
+
+
+def _trim(picks: list[Pick]) -> list[Pick]:
+    """Leave out bulk cards, and keep every 2-3 star pick but only the best few
+    1-star ones, so the lists stay short."""
+    weak = 0
+    kept = []
+    for p in picks:
+        if not p.owned and p.price and currency.from_usd(p.price) < MIN_PRICE:
+            continue
+        if p.strength == 1 and not p.owned:
+            weak += 1
+            if weak > MAX_WEAK:
+                continue
+        kept.append(p)
+    return kept

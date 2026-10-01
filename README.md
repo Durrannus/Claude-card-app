@@ -34,8 +34,8 @@ lookups need the internet.
   Pokémon and Yu-Gi-Oh! cards (see below)
 - **Market signals:** sell, hold and buy suggestions from each card's price
   history and meta trend, with charts and your profit (see below)
-- **Future insight:** early warning signs of cards likely to become popular,
-  before the rise shows up in play rates (see below)
+- **Future insight:** a simple list of good and bad investments, with a star
+  rating and the reason for each (see below)
 - **Meta tracker:** save tournament decklists and see which cards and
   legends are played most, how many copies decks run, and which of those
   cards you're missing (see below)
@@ -189,7 +189,7 @@ Each deck is saved under the event (e.g. "Regional Qualifier Los Angeles"),
 with its placing, the event's player count and the date of the event's final
 day (the Sunday before the article). The articles pick one deck per legend
 plus the Top 8, so legend shares among these decks don't match the whole
-field. Their placings do power the "Top finishers" sign in Future insight.
+field. Their placings do power the "Winning players use it more" reason in Future insight.
 Some older articles show decklists as images, so they can't be read.
 
 #### riftbound.gg
@@ -394,44 +394,55 @@ Signals are only as good as the data behind them:
   Meta tracker tab. Add other tournament results by hand, with their dates. Trends compare recent decklists with older ones, so a
   steady flow of dated lists is what makes early detection work.
 
-## Future insight: cards that could be next
+## Future insight: good and bad investments
 
-Nobody can know the future meta for certain. This tab looks for the
-patterns that tend to come *before* a card takes off, and ranks cards by a
-**watch score** (0–100): the more signs, and the stronger they are, the
-higher the score. Select a card to see each sign explained with its numbers.
+This tab answers two questions in plain terms: **which cards look like good
+investments, and which don't.** Switch between **Good investments** and
+**Bad investments**, or tick **Only cards I own** to check your own
+collection.
 
-| Sign | What it means | Why it matters |
-| --- | --- | --- |
-| Top finishers | Decks in the top quarter of events play it much more than the rest | Players copy winning lists |
-| Wins more | Decks with it win more of their games than decks without it | Strong but under-played cards get picked up |
-| Climbing | Its play rate has been rising week on week from a low base | Early adoption, before it's a clear trend |
-| Rising legend | It's in most lists of a legend whose meta share is growing | The card rises with its legend |
-| Spreading | More legends have started playing it | Cards that fit many decks become staples |
-| Price first | Its price is rising faster than its play rate | Buyers may be ahead of the tournament results |
-| New | It showed up in decklists for the first time in the last two weeks | Something new is being tried |
-| Unplayed, price up | Not in any decklist, but the price is up 25%+ in two weeks | The market may be betting on it early |
+Each card gets a simple verdict with up to three stars:
 
-Cards already in 60%+ of decks are left out, since they're already the meta.
-Signs only count when the difference is big enough not to be chance, and
-nothing is judged until there are at least 20 decklists in the period.
+- **Good:** ★★★ Strong buy, ★★ Buy, ★ Worth watching.
+- **Bad:** ★★★/★★ Avoid (or **Sell** if you own it), ★ Be careful (or
+  **Consider selling**).
 
-**Legends on the move** shows which legends are gaining or losing meta share,
-comparing the second half of the period with the first.
+The list shows the price and the main reason in a few words. Click a card to
+see every reason explained with its numbers, then add it to your wishlist or
+check eBay's sold listings.
 
-**Get latest data** imports new decklists from riftbound.gg and updates all
-prices in one click. **Add to wishlist** and **eBay ↗** help you act on a
-card.
+| Reason | Means |
+| --- | --- |
+| Being played more, price hasn't caught up | Play rate is rising clearly but the price hasn't moved: usually the cheapest time to buy |
+| Winning players use it more | Decks in the top quarter of events play it much more than the rest; players copy winning lists |
+| Decks with it win more | Decks with it win more of their matches than decks without it |
+| Being played more each week | Its play rate has been climbing week on week from a low base |
+| Key card of a legend on the rise | It's in most lists of a legend whose meta share is growing |
+| Spreading to more decks | More legends have started playing it |
+| New in tournament decks | It appeared in decklists for the first time in the last two weeks |
+| Price rising before the play rate | Buyers may be ahead of the tournament results |
+| Being played less | Play rate is dropping clearly; prices usually follow |
+| Price jumped without more play | A price spike with no extra demand often drops back |
+| Price and play both peaking | Both are up a lot: a good time to sell spares, a risky time to buy |
+| Price falling | Down 20%+ with no rise in play to turn it round |
 
-The top-finishers sign needs placings, and the win-rate sign needs match
-records. Both come with TopDeck.gg tournaments. Placings also come with
-riftbound.gg tournament decks and with decklists you add by hand.
+To keep the lists short and useful:
 
-Signs that compare with earlier weeks (climbing, spreading, rising legends,
-new arrivals) need a few weeks of history. After your first import the tab
-says how many days it has, and they appear as daily imports build up.
+- cards under £1 (bulk) are left out unless you own them;
+- only the 15 strongest one-star cards are shown;
+- cards with mixed signals are left out.
 
-These are signs to research, not predictions, and they can be wrong. Check
+Changes only count when they're big enough not to be chance. Nothing is
+judged until there are at least 20 recent decklists. The numbers behind each
+verdict come from the decklists in the Meta tracker and the day's prices, so
+**Get latest data** keeps it current.
+
+The "winning players" reason needs placings and the "win more" reason needs
+match records. Both come with TopDeck.gg tournaments and Riot's official
+Regional Qualifier decklists. Reasons that compare with earlier weeks need a
+few weeks of history.
+
+These are signs worth checking, not guarantees, and they can be wrong. Check
 spoilers, ban announcements and recent sales before you buy.
 
 ## Where your data is stored
