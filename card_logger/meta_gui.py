@@ -8,7 +8,7 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 
 import webbrowser
 
-from . import riftboundgg, theme, topdeck
+from . import riftboundgg, riotnews, theme, topdeck
 from .db import Card, CardDatabase
 from .meta import (
     BATTLEFIELDS, CHAMPION, LEGEND, MAIN, RUNES, SECTIONS, Deck, MetaTracker, card_key, parse_decklist,
@@ -214,12 +214,21 @@ class ImportDialog(tk.Toplevel):
             "a minute or two."
         )).grid(row=9, column=0, columnspan=3, sticky="w", padx=(22, 0))
 
+        # Riot's own "Top Decks" articles: the only published Regional Qualifier decklists.
+        self.riot = tk.BooleanVar(value=db.get_setting("import_riot", "1") == "1")
+        ttk.Checkbutton(form, text="Official Regional Qualifier decklists from Riot (playriftbound.com)",
+                        variable=self.riot).grid(row=10, column=0, columnspan=3, sticky="w", pady=(12, 2))
+        ttk.Label(form, style="Muted.TLabel", font=theme.font(9), wraplength=450, justify="left", text=(
+            "A few days after each Regional Qualifier, Riot posts its Top 8 and the best-placed deck of every "
+            "other legend, with final rankings."
+        )).grid(row=11, column=0, columnspan=3, sticky="w", padx=(22, 0))
+
         self.auto = tk.BooleanVar(value=db.get_setting("auto_import") == "1")
         ttk.Checkbutton(form, text="Import new decklists automatically each day", variable=self.auto).grid(
-            row=10, column=0, columnspan=3, sticky="w", pady=(14, 0))
+            row=12, column=0, columnspan=3, sticky="w", pady=(14, 0))
 
         buttons = ttk.Frame(form)
-        buttons.grid(row=11, column=0, columnspan=3, sticky="e", pady=(16, 0))
+        buttons.grid(row=13, column=0, columnspan=3, sticky="e", pady=(16, 0))
         ttk.Button(buttons, text="Cancel", command=self.destroy).pack(side="right")
         ttk.Button(buttons, text="Import", style="Accent.TButton", command=self._ok).pack(side="right", padx=(0, 8))
         self.bind("<Escape>", lambda e: self.destroy())
@@ -235,7 +244,7 @@ class ImportDialog(tk.Toplevel):
         except ValueError:
             messagebox.showerror("Import decklists", "Enter whole numbers above zero.", parent=self)
             return
-        if not (self.topdeck.get() or self.community.get() or self.tournaments.get()):
+        if not (self.topdeck.get() or self.community.get() or self.tournaments.get() or self.riot.get()):
             messagebox.showerror("Import decklists", "Tick at least one source.", parent=self)
             return
         if self.topdeck.get() and not self.key.get().strip():
@@ -247,6 +256,7 @@ class ImportDialog(tk.Toplevel):
                            ("topdeck_key", self.key.get().strip()),
                            ("import_community", "1" if self.community.get() else "0"),
                            ("import_tournaments", "1" if self.tournaments.get() else "0"),
+                           ("import_riot", "1" if self.riot.get() else "0"),
                            ("auto_import", "1" if self.auto.get() else "0")]:
             self.db.set_setting(key, value)
         self.accepted = True
@@ -455,6 +465,7 @@ class MetaTrackerTab(ttk.Frame):
         key, min_players = get("topdeck_key"), int(get("import_min_players", "8"))
         tournaments = get("import_tournaments", "1") == "1"
         community = get("import_community", "1") == "1"
+        riot = get("import_riot", "1") == "1"
         known = self.meta.known_sources("")
 
         def work(report):
@@ -463,6 +474,11 @@ class MetaTrackerTab(ttk.Frame):
                 try:
                     results["topdeck"] = topdeck.fetch(key, days, min_players, known, report=report)
                 except topdeck.TopDeckError as e:
+                    errors.append(str(e))
+            if riot:
+                try:
+                    results["riot"] = riotnews.fetch(days, known, report=report)
+                except riotnews.FetchError as e:
                     errors.append(str(e))
             if tournaments or community:
                 try:
@@ -489,6 +505,12 @@ class MetaTrackerTab(ttk.Frame):
                              f"{r.tournaments} tournament{'s' if r.tournaments != 1 else ''}")
                 if r.without_lists:
                     notes.append(f"{r.without_lists} TopDeck.gg players had no public decklist.")
+            if "riot" in results:
+                r = results["riot"]
+                added = riotnews.save(self.meta, r)
+                events = sorted({d.event.replace("Regional Qualifier ", "") for d in r.decks})
+                lines.append(f"Riot: {added} official decklist{'s' if added != 1 else ''}"
+                             + (f" ({', '.join(events)})" if events else ""))
             if "riftboundgg" in results:
                 r = results["riftboundgg"]
                 riftboundgg.save(self.meta, r)

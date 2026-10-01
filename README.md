@@ -171,7 +171,26 @@ credit it, so the Meta tracker shows "Tournament data provided by
 TopDeck.gg".
 
 The official Riftbound event system (the Event Locator) keeps decklists
-private to organisers, so they can't be imported from there.
+private to organisers, so they can't be imported from there. For Regional
+Qualifiers, use Riot's own articles instead (below).
+
+#### Official Regional Qualifier decklists (Riot)
+
+A few days after each Regional Qualifier, Riot publishes a "Top Decks"
+article on [playriftbound.com](https://playriftbound.com/en-us/news/), for
+example *Los Angeles' Top Decks*. It has the **Top 8** and the
+**best-placed deck of every other legend**, each with the player's final
+ranking. These are often the only published decklists from a Regional
+Qualifier, because riftbound.gg and TopDeck.gg don't carry them. Leave
+**Official Regional Qualifier decklists from Riot** ticked and the import
+reads every article published within the look-back.
+
+Each deck is saved under the event (e.g. "Regional Qualifier Los Angeles"),
+with its placing, the event's player count and the date of the event's final
+day (the Sunday before the article). The articles pick one deck per legend
+plus the Top 8, so legend shares among these decks don't match the whole
+field. Their placings do power the "Top finishers" sign in Future insight.
+Some older articles show decklists as images, so they can't be read.
 
 #### riftbound.gg
 

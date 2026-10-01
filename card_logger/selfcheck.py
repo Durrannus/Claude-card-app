@@ -15,7 +15,7 @@ from datetime import date
 
 import os
 
-from . import currency, pricing, riftboundgg, topdeck
+from . import currency, pricing, riftboundgg, riotnews, topdeck
 from .db import Card, CardDatabase, DEFAULT_DB_PATH
 
 SAMPLE_CHARS = 1500
@@ -112,6 +112,22 @@ def check_other(rec: Recorder, game: str, name: str) -> str:
     return f"'{name}': ${result.price:,.2f} ({result.matched})"
 
 
+def check_riot(rec: Recorder) -> str:
+    def fetch(url):
+        page = riotnews._get(url)
+        rec.samples.append((url, page[:SAMPLE_CHARS]))
+        return page
+    links = riotnews.article_links(fetch(riotnews.NEWS))
+    if not links:
+        raise ValueError("No \"Top Decks\" articles found on the news page; its layout may have changed.")
+    article = riotnews.parse_article(fetch(links[0]), links[0])
+    if not article.decks:
+        raise ValueError(f"Couldn't read the decklists in {article.title!r}; the article layout may have changed.")
+    best = min(article.decks, key=lambda d: d.placement or 999)
+    return (f"{len(links)} articles; newest {article.title!r}: {len(article.decks)} decklists, "
+            f"winner {best.player} ({best.legend})")
+
+
 def check_exchange_rates(rec: Recorder) -> str:
     rates, day, source = currency.fetch_rates(fetch=rec.fetch)
     return f"$1 = £{rates['GBP']:.4f} = €{rates['EUR']:.4f} on {day} ({source})"
@@ -124,6 +140,7 @@ CHECKS = [
     ("Magic prices (Scryfall)", lambda rec: check_other(rec, "Magic", "Lightning Bolt")),
     ("Pokémon prices (Pokémon TCG API)", lambda rec: check_other(rec, "Pokémon", "Pikachu")),
     ("Yu-Gi-Oh! prices (YGOPRODeck)", lambda rec: check_other(rec, "Yu-Gi-Oh!", "Dark Magician")),
+    ("Regional Qualifier decklists (Riot)", check_riot),
     ("Exchange rates (ECB via frankfurter.dev)", check_exchange_rates),
 ]
 

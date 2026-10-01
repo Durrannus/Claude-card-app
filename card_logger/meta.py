@@ -40,6 +40,7 @@ _SECTION_NAMES = {
     "rune": RUNES,
     "runes": RUNES,
     "runedeck": RUNES,
+    "runepool": RUNES,
     "battlefield": BATTLEFIELDS,
     "battlefields": BATTLEFIELDS,
     "sideboard": SIDEBOARD,

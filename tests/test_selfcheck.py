@@ -5,9 +5,10 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
-from card_logger import pricing, riftboundgg, selfcheck
+from card_logger import pricing, riftboundgg, riotnews, selfcheck
 from tests.test_riftboundgg import fake_api
 from tests.test_pricing import POKEMON_CARDS, SCRYFALL_PRINTS, YUGIOH_CARDS, rb_fetch
+from tests.test_riotnews import PAGES
 
 
 def fake_services(url):
@@ -43,23 +44,28 @@ class SelfCheckTest(unittest.TestCase):
 
     def test_all_pass(self):
         with mock.patch.object(pricing, "_get_json", fake_services), \
-                mock.patch.object(riftboundgg, "http_json", fake_services):
+                mock.patch.object(riftboundgg, "http_json", fake_services), \
+                mock.patch.object(riotnews, "_get", lambda url, fetch=None: PAGES[url]):
             ok, out, report = self.run_check()
         self.assertTrue(ok, out)
-        self.assertEqual(out.count("[PASS]"), 6)
+        self.assertEqual(out.count("[PASS]"), 7)
         self.assertEqual(out.count("[SKIP]"), 1)  # no TopDeck.gg key
         self.assertIn("newest event 'Vendetta Case Tournament' (37 players)", out)
         self.assertIn("legend 'Sett - The Boss'", out)
         self.assertIn("$1 = £0.7546", out)
+        self.assertIn("winner DSG Prismaticism (Rengar, Pridestalker)", out)
         self.assertIn("https://tcgcsv.com/tcgplayer/89/groups", report)  # response samples saved
 
     def test_failures_reported(self):
         def offline(url):
             raise pricing.PriceLookupError("Could not reach the price service. Check your internet connection.")
-        with mock.patch.object(pricing, "_get_json", offline), mock.patch.object(riftboundgg, "http_json", offline):
+        def riot_offline(url, fetch=None):
+            raise riotnews.FetchError("Could not reach playriftbound.com. Check your internet connection.")
+        with mock.patch.object(pricing, "_get_json", offline), mock.patch.object(riftboundgg, "http_json", offline), \
+                mock.patch.object(riotnews, "_get", riot_offline):
             ok, out, report = self.run_check()
         self.assertFalse(ok)
-        self.assertEqual(out.count("[FAIL]"), 6)
+        self.assertEqual(out.count("[FAIL]"), 7)
         self.assertIn("Traceback", report)
 
 
