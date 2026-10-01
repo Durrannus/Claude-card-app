@@ -14,6 +14,7 @@ class LineChart(tk.Canvas):
 
     One series per chart: the title above it says what's plotted, so there's
     no legend. The last point is labelled; hover shows any point's value.
+    An optional projection continues the line, dashed, from its last point.
     """
 
     PAD_LEFT, PAD_RIGHT, PAD_TOP, PAD_BOTTOM = 52, 56, 12, 24
@@ -22,14 +23,16 @@ class LineChart(tk.Canvas):
         super().__init__(parent, height=height, background=theme.SURFACE, highlightthickness=0, **kw)
         self.color, self.fmt, self.zero_based = color, fmt, zero_based
         self.points: list[tuple[str, float | None]] = []
+        self.projection: list[tuple[str, float]] = []
         self.empty_text = ""
         self._xy: list[tuple[float, float, str, float]] = []
         self.bind("<Configure>", lambda _: self.draw())
         self.bind("<Motion>", self._hover)
         self.bind("<Leave>", lambda _: self.delete("hover"))
 
-    def set_data(self, points: list[tuple[str, float | None]], empty_text: str = "") -> None:
-        self.points, self.empty_text = points, empty_text
+    def set_data(self, points: list[tuple[str, float | None]], empty_text: str = "",
+                 projection: list[tuple[str, float]] | None = None) -> None:
+        self.points, self.empty_text, self.projection = points, empty_text, projection or []
         self.draw()
 
     def draw(self) -> None:
@@ -44,6 +47,7 @@ class LineChart(tk.Canvas):
                              width=w - 30, justify="center")
             return
 
+        values += [v for _, v in self.projection]
         lo, hi = (0.0 if self.zero_based else min(values)), max(values)
         if hi - lo < 1e-9:
             lo, hi = lo - (abs(lo) * 0.1 or 1), hi + (abs(hi) * 0.1 or 1)
@@ -56,11 +60,12 @@ class LineChart(tk.Canvas):
         axis_font = tkfont.Font(font=theme.font(8))
         end_font = tkfont.Font(font=theme.font(9, "bold"))
         widest_axis = max(axis_font.measure(self.fmt(lo + (hi - lo) * f)) for f in (0, 0.5, 1))
-        last_value = next(v for _, v in reversed(self.points) if v is not None)
+        last_value = (self.projection or [(None, None)])[-1][1] or next(
+            v for _, v in reversed(self.points) if v is not None)
         left = max(self.PAD_LEFT, widest_axis + 14)
         right = w - max(self.PAD_RIGHT, end_font.measure(self.fmt(last_value)) + 16)
         top, bottom = self.PAD_TOP, h - self.PAD_BOTTOM
-        days = [date.fromisoformat(d).toordinal() for d, _ in self.points]
+        days = [date.fromisoformat(d).toordinal() for d, _ in self.points + self.projection]
         d0, d1 = min(days), max(days)
         span = max(d1 - d0, 1)
 
@@ -78,8 +83,8 @@ class LineChart(tk.Canvas):
             self.create_text(left - 8, y, text=self.fmt(v), anchor="e", fill=theme.MUTED, font=theme.font(8))
         self.create_text(left, h - 6, text=_short(self.points[0][0]), anchor="sw", fill=theme.MUTED,
                          font=theme.font(8))
-        self.create_text(right, h - 6, text=_short(self.points[-1][0]), anchor="se", fill=theme.MUTED,
-                         font=theme.font(8))
+        self.create_text(right, h - 6, text=_short((self.points + self.projection)[-1][0]), anchor="se",
+                         fill=theme.MUTED, font=theme.font(8))
 
         # 2px line, broken where there's no value.
         segment: list[float] = []
@@ -99,6 +104,18 @@ class LineChart(tk.Canvas):
 
         # End marker with a surface ring, labelled in text ink.
         x, y, _, v = self._xy[-1]
+        if self.projection:
+            # Dashed continuation to the projected value, labelled at its end.
+            n = len(self.points)
+            coords = [c for i in range(len(self.projection)) for c in (x_of(n + i), y_of(self.projection[i][1]))]
+            self.create_line(x, y, *coords[2:], fill=self.color, width=2, dash=(5, 4))
+            px, py = coords[-2], coords[-1]
+            self.create_oval(px - 3, py - 3, px + 3, py + 3, outline=self.color, width=2, fill=theme.SURFACE)
+            self.create_text(px + 8, py, text=self.fmt(self.projection[-1][1]), anchor="w", fill=theme.MUTED,
+                             font=theme.font(9, "bold"))
+            self._dot(x, y, self.color)
+            self.create_text(x, y - 9, text=self.fmt(v), anchor="s", fill=theme.TEXT, font=theme.font(9, "bold"))
+            return
         self._dot(x, y, self.color)
         self.create_text(x + 8, y, text=self.fmt(v), anchor="w", fill=theme.TEXT, font=theme.font(9, "bold"))
 

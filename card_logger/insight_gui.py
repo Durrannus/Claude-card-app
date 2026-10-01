@@ -2,13 +2,16 @@
 
 import tkinter as tk
 import webbrowser
+from datetime import date
 from tkinter import messagebox, ttk
 
 from . import catalog, currency, insight, market, theme
+from .charts import LineChart
 from .db import Card, CardDatabase, name_key
 from .meta import MetaTracker
 
 GOOD, BAD = insight.GOOD, insight.BAD
+PRICE_COLOR = "#b8862a"  # same as the price charts in the Market tab
 
 COLUMNS = [
     ("rating", "Verdict", 150, "w"),
@@ -93,8 +96,6 @@ class InsightTab(ttk.Frame):
                                        font=theme.font(15, "bold"))
         self.verdict_label.pack(anchor="w", pady=(4, 0))
         ttk.Label(panel, textvariable=self.d_price, style="CardMuted.TLabel").pack(anchor="w", pady=(0, 8))
-        self.reasons_frame = ttk.Frame(panel, style="Header.TFrame")
-        self.reasons_frame.pack(fill="both", expand=True, anchor="n")
         buttons = ttk.Frame(panel, style="Header.TFrame")
         buttons.pack(side="bottom", fill="x", pady=(8, 0))
         buttons.columnconfigure((0, 1), weight=1, uniform="b")
@@ -103,9 +104,25 @@ class InsightTab(ttk.Frame):
         self.wish_button.grid(row=0, column=0, sticky="ew")
         self.ebay_button = ttk.Button(buttons, text="eBay sold ↗", style="Small.TButton", command=self.open_ebay)
         self.ebay_button.grid(row=0, column=1, sticky="ew", padx=(4, 0))
-        ttk.Label(panel, style="CardMuted.TLabel", wraplength=theme.px(306), justify="left", text=(
-            "These are signs worth checking, not guarantees: prices can move for reasons no data shows."
-        )).pack(side="bottom", anchor="w", pady=(8, 0))
+        ttk.Label(panel, style="CardMuted.TLabel", wraplength=theme.px(306), justify="left",
+                  text="Signs worth checking, not guarantees.").pack(side="bottom", anchor="w", pady=(6, 0))
+
+        # The reasons and the price chart scroll if a small screen can't fit them.
+        self.scroll = theme.ScrollFrame(panel)
+        self.scroll.pack(fill="both", expand=True)
+        self.reasons_frame = ttk.Frame(self.scroll.inner, style="Header.TFrame")
+        self.reasons_frame.pack(fill="x", anchor="n")
+        chart_box = ttk.Frame(self.scroll.inner, style="Header.TFrame")
+        chart_box.pack(fill="x", pady=(10, 0))
+        heading = ttk.Frame(chart_box, style="Header.TFrame")
+        heading.pack(anchor="w")
+        ttk.Label(heading, text="Price", style="CardSection.TLabel").pack(side="left")
+        ttk.Label(heading, text="  dashed: trend line, not a forecast", style="CardMuted.TLabel").pack(side="left")
+        self.chart = LineChart(chart_box, PRICE_COLOR, fmt=currency.fmt, height=theme.px(110))
+        self.chart.pack(fill="x", pady=(4, 0))
+        self.d_trend = tk.StringVar()
+        ttk.Label(chart_box, textvariable=self.d_trend, style="CardMuted.TLabel", wraplength=theme.px(288),
+                  justify="left").pack(anchor="w", pady=(2, 0))
 
     # --- display -------------------------------------------------------------
 
@@ -139,6 +156,7 @@ class InsightTab(ttk.Frame):
     def show_details(self) -> None:
         for child in self.reasons_frame.winfo_children():
             child.destroy()
+        self.scroll.to_top()
         sel = self.tree.selection()
         if not sel:
             good = self.kind_var.get() == GOOD
@@ -152,6 +170,8 @@ class InsightTab(ttk.Frame):
                 + " Check again after the next tournaments.")).pack(anchor="w")
             self.wish_button.state(["disabled"])
             self.ebay_button.state(["disabled"])
+            self.chart.set_data([])
+            self.d_trend.set("")
             return
         p = self.shown[int(sel[0])]
         self.d_name.set(p.name)
@@ -168,6 +188,25 @@ class InsightTab(ttk.Frame):
                       justify="left").pack(anchor="w", padx=(14, 0))
         self.wish_button.state(["!disabled"] if p.kind == GOOD else ["disabled"])
         self.ebay_button.state(["!disabled"])
+        self._show_price(p)
+
+    def _show_price(self, p: insight.Pick) -> None:
+        trend = insight.price_trend(self.db, p.name)
+        self.chart.set_data(trend.points, "No price history yet. It builds up as prices update each day.",
+                            projection=trend.projection)
+        parts = []
+        if trend.change is not None and trend.days:
+            parts.append("No change" if abs(trend.change) < 0.005 else
+                         f"{'Up' if trend.change > 0 else 'Down'} {abs(trend.change):.0%}"
+                         + f" in {trend.days} day{'s' if trend.days != 1 else ''}.")
+        if trend.projection:
+            (_, now), (end, ahead) = trend.projection[0], trend.projection[-1]
+            change = (ahead - now) / now if now else 0
+            parts.append(f"If it carries on: about {currency.fmt(ahead)} by {date.fromisoformat(end).day} "
+                         f"{date.fromisoformat(end):%b} ({change:+.0%}).")
+        elif trend.points:
+            parts.append("Not enough price history for a trend line yet.")
+        self.d_trend.set(" ".join(parts))
 
     # --- actions -------------------------------------------------------------
 

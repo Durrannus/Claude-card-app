@@ -188,6 +188,40 @@ class InvestmentsTest(unittest.TestCase):
         self.assertEqual(insight.investments(db, meta, {"cheapfading": 0.20}, today=ANCHOR).bad, [])
 
 
+class PriceTrendTest(unittest.TestCase):
+    def setUp(self):
+        from card_logger import catalog
+        self.catalog = catalog
+        self.db = CardDatabase(":memory:")
+        raw = [{"id": "OGN-001", "name": "Rising Card", "price": "3.00", "delta7dPrice": "1.00", "deltaPrice": "0.10"},
+               {"id": "OGN-001a", "name": "Rising Card", "price": "9.00"},
+               {"id": "OGN-002", "name": "Old Card", "price": "5.00"}]
+        catalog.save(self.db, catalog.parse(raw), day="2026-09-27")
+
+    def test_week_from_riftbound_changes(self):
+        t = insight.price_trend(self.db, "Rising Card")  # the regular printing, not the $9 alt art
+        self.assertEqual(t.points, [("2026-09-20", 2.0), ("2026-09-26", 2.9), ("2026-09-27", 3.0)])
+        self.assertAlmostEqual(t.change, 0.5)
+        self.assertEqual(t.days, 7)
+        (start, now), (end, ahead) = t.projection
+        self.assertEqual((start, now, end), ("2026-09-27", 3.0, "2026-10-04"))  # no further ahead than the history
+        self.assertGreater(ahead, 3.0)
+        self.assertLessEqual(ahead, 4.5)  # capped at +50%
+
+    def test_no_trend_without_history(self):
+        t = insight.price_trend(self.db, "Old Card")
+        self.assertEqual(t.points, [("2026-09-27", 5.0)])
+        self.assertIsNone(t.projection)
+        self.assertEqual(insight.price_trend(self.db, "Unknown").points, [])
+
+    def test_projection_follows_the_line(self):
+        points = [(f"2026-09-{d:02d}", 10.0 - (d - 1) * 0.1) for d in range(1, 29)]  # -0.10 a day
+        (_, now), (end, ahead) = insight._projection(points)
+        self.assertEqual(end, "2026-10-12")
+        self.assertAlmostEqual(ahead, now - 1.4, places=6)
+        self.assertIsNone(insight._projection(points[:2]))
+
+
 class HelpersTest(unittest.TestCase):
     def test_slope(self):
         self.assertAlmostEqual(insight.slope_per_week([(0, 0.1), (1, 0.2), (2, 0.3)]), 10)

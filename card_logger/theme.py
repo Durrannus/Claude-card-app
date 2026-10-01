@@ -297,3 +297,36 @@ class StatTile(ttk.Frame):
         self.value = tk.StringVar(value="—")
         ttk.Label(self, textvariable=self.value, style="TileGold.TLabel" if gold else "TileValue.TLabel").pack(anchor="w")
         ttk.Label(self, text=caption.upper(), style="TileCaption.TLabel").pack(anchor="w")
+
+
+class ScrollFrame(ttk.Frame):
+    """A frame whose contents scroll vertically when they don't fit. Put
+    widgets in `.inner`; the scroll bar only shows when it's needed, and the
+    mouse wheel scrolls it while the pointer is over it."""
+
+    def __init__(self, parent, style: str = "Header.TFrame"):
+        super().__init__(parent, style=style)
+        self.canvas = tk.Canvas(self, background=SURFACE, highlightthickness=0, borderwidth=0)
+        self.bar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
+        self.inner = ttk.Frame(self.canvas, style=style)
+        window = self.canvas.create_window(0, 0, window=self.inner, anchor="nw")
+        self.canvas.configure(yscrollcommand=self._scrolled)
+        self.inner.bind("<Configure>", lambda _: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
+        self.canvas.bind("<Configure>", lambda e: self.canvas.itemconfigure(window, width=e.width))
+        self.canvas.pack(side="left", fill="both", expand=True)
+        self.bind("<Enter>", lambda _: self.bind_all("<MouseWheel>", self._wheel))
+        self.bind("<Leave>", lambda _: self.unbind_all("<MouseWheel>"))
+
+    def _scrolled(self, first, last) -> None:
+        self.bar.set(first, last)
+        if float(first) <= 0 and float(last) >= 1:
+            self.bar.pack_forget()
+        elif not self.bar.winfo_ismapped():
+            self.bar.pack(side="right", fill="y", before=self.canvas)
+
+    def _wheel(self, event) -> None:
+        if self.bar.winfo_ismapped():
+            self.canvas.yview_scroll(-1 if event.delta > 0 else 1, "units")
+
+    def to_top(self) -> None:
+        self.canvas.yview_moveto(0)

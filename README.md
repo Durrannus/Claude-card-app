@@ -411,6 +411,15 @@ The list shows the price and the main reason in a few words. Click a card to
 see every reason explained with its numbers, then add it to your wishlist or
 check eBay's sold listings.
 
+Below the reasons, a small **price chart** shows how its price has moved.
+It uses the card's cheapest regular printing, so the first download already
+shows a week (from riftbound.gg's 7-day change), and the chart grows as
+prices update each day. A **dashed line** continues the recent trend, e.g. "If
+it carries on: about £1.57 by 4 Oct (+29%)". It's a straight line drawn
+through the recent prices, never further ahead than the history behind it and
+capped at ±50%. It shows the direction of travel, not a forecast: news,
+spoilers or bans can change a price overnight.
+
 | Reason | Means |
 | --- | --- |
 | Being played more, price hasn't caught up | Play rate is rising clearly but the price hasn't moved: usually the cheapest time to buy |

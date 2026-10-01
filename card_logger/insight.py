@@ -475,3 +475,73 @@ def _trim(picks: list[Pick]) -> list[Pick]:
                 continue
         kept.append(p)
     return kept
+
+
+# --- price chart for a pick ---------------------------------------------------------
+
+PROJECT_DAYS = 14   # how far ahead the trend line goes
+TREND_DAYS = 30     # recent prices the trend is fitted to
+MAX_PROJECTED = 0.5  # a straight line can't promise more than ±50%
+
+
+@dataclass
+class PriceTrend:
+    points: list[tuple[str, float]]               # (day, US dollars), oldest first
+    projection: list[tuple[str, float]] | None    # from the last point to PROJECT_DAYS ahead
+    change: float | None = None                   # over the shown history, as a fraction
+    days: int = 0
+
+
+def price_trend(db: CardDatabase, name: str) -> PriceTrend:
+    """Price history of a card's cheapest regular printing, and where it heads
+    if its recent trend carries on (a straight line, not a forecast)."""
+    from . import catalog
+
+    key = name_key(name)
+    printings = [c for c in catalog.load(db) if name_key(c.base_name) == key and c.main_price]
+    regular = [c for c in printings if c.version == "Standard"] or printings
+    points: list[tuple[str, float]] = []
+    if regular:
+        card = min(regular, key=lambda c: c.main_price)
+        points = catalog.history(db, card)
+        # riftbound.gg gives each price's change over 1 and 7 days, so the chart
+        # shows a week's movement even before the app has a week of history.
+        latest = db.get_setting("catalog_updated") or date.today().isoformat()
+        today = date.fromisoformat(latest)
+        known = {d for d, _ in points}
+        for back, delta in ((7, card.change_7d), (1, card.change_1d)):
+            day = (today - timedelta(days=back)).isoformat()
+            if delta and day not in known and (not points or day < points[0][0] or len(points) < 3):
+                points.append((day, max(0.01, card.main_price - delta)))
+        if latest not in known:
+            points.append((latest, card.main_price))
+        points.sort()
+    general = db.price_history(name=name)
+    if len(general) > len(points):
+        points = general
+    if len(points) < 2:
+        return PriceTrend(points, None)
+    first, last = date.fromisoformat(points[0][0]), date.fromisoformat(points[-1][0])
+    change = (points[-1][1] - points[0][1]) / points[0][1] if points[0][1] else None
+    return PriceTrend(points, _projection(points), change, (last - first).days)
+
+
+def _projection(points: list[tuple[str, float]]) -> list[tuple[str, float]] | None:
+    last_day = date.fromisoformat(points[-1][0])
+    recent = [(date.fromisoformat(d), v) for d, v in points
+              if (last_day - date.fromisoformat(d)).days <= TREND_DAYS]
+    if len(recent) < 3 or (last_day - recent[0][0]).days < 6:
+        return None  # too little history to draw a trend
+    xs = [(d - last_day).days for d, _ in recent]
+    ys = [v for _, v in recent]
+    mx, my = sum(xs) / len(xs), sum(ys) / len(ys)
+    var = sum((x - mx) ** 2 for x in xs)
+    if not var:
+        return None
+    slope = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / var
+    # Never look further ahead than the history behind the line.
+    days_ahead = min(PROJECT_DAYS, (last_day - recent[0][0]).days)
+    now = points[-1][1]
+    ahead = now + slope * days_ahead
+    ahead = max(now * (1 - MAX_PROJECTED), min(now * (1 + MAX_PROJECTED), ahead), 0.01)
+    return [(points[-1][0], now), ((last_day + timedelta(days=days_ahead)).isoformat(), ahead)]
